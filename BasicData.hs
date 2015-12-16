@@ -1,0 +1,116 @@
+module BasicData
+       where
+import Data.Tree
+import qualified Data.Map.Strict as Map
+
+type IdeaKey = Integer
+type GoodKey = Integer
+
+data Person = Person
+  { job        :: Company
+  , owns       :: [Company]
+  , pIdeas     :: [IdeaKey]
+  , pGood      :: [(GoodKey, Integer)]
+  , mind       :: Mind
+  , pContracts :: [Contract]
+  } 
+
+data OweOwed a = OweOwed
+  { owe  :: a
+  , owed :: a
+  }
+
+data ItmQty a = ItmQty
+  { item :: a
+  , qty  :: Integer
+  }
+
+data Good = Good --have a map/set of these
+  { gkey              :: GoodKey
+  , desirability      :: Integer
+  , dropDesire        :: Integer --need this to somehow represent a drop function based on amnt owned
+  , scalability       :: Integer --need this to somehow represent a scalability function based on amnt producing and cost
+  , costToManufacture :: Double
+  , depreciation      :: Integer
+  , stability         :: Integer
+    --include a function (partial TM?) to change all of these.
+  }
+
+data Idea = Idea
+  { ikey :: IdeaKey
+  }
+
+data Contract = Contract
+  { cGoods            :: OweOwed (ItmQty Good)
+  , goodsPTime        :: OweOwed (ItmQty Good, Integer) --Selection will greatly favor using prebuilt things to TM contracts, b/c more successful. But these units don't model things like interest well.
+  , money             :: OweOwed Double
+  , moneyPTime        :: OweOwed (Double, Integer)
+  , percentMoney      :: OweOwed Double
+  , percentMoneyPTime :: OweOwed (Double, Integer)
+  , cIdeas            :: OweOwed Idea
+  }
+  
+data Company = Company
+  { workers :: [Person]
+  , good    :: Good
+  }
+
+data Mind = Mind
+  { mainProg    :: Expression
+  , bargainProg :: Expression
+  , funcTable   :: Map.Map Int FuncDesc
+  }
+
+data FuncDesc = FuncDesc
+  { body :: Expression
+  , retType :: TypeVar
+  , argType :: Map.Map Int TypeVar
+  }
+  deriving (Show)
+
+data Operator = Add 
+              | Subt
+              | Div
+              | Mul
+              | Lt
+              | Gt
+              | Eq
+              | Not
+              | And
+              | Or
+              | If
+              | Dfn
+              | Call  --takes a FuncId (function id, like func pointer) - id number of the function, and all the arguments to that function
+              | Map  --also takes an fid, along with a list to map over
+              | Fold
+              | MkList
+              | ConsList
+              | AppLists
+              deriving (Show)
+
+data Datum = DatB Bool
+           | DatI Integer
+           | DatD Double
+           | ListB [Bool]
+           | ListI [Integer]
+           | ListD [Double]
+           | FuncArg Int --the integer is the 'name' of the argument. Types are inferred.
+           | FuncId Int  --integer is 'name' of function
+           deriving (Show)
+
+data TypeVar = ListVar      Int
+             | SingletonVar Int   --not a list
+             | GenVar       Int   --anything
+             | NumVar       Int   --numeric: double or int
+             | ListNumVar   Int   --list of numerics
+             | SpecVar      Datum --integer is an id, like type t0, t1
+             deriving (Show)
+
+data Action = MkContract Person Contract
+            | MkCompany Good
+
+--class Operator opT argsT retT where
+--  runOp :: opT -> argsT -> retT
+--  runOp op args = op args
+  
+type Expression = (Tree (Either Operator Datum))
