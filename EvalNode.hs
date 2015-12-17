@@ -5,6 +5,9 @@ import Data.Tree
 import qualified Data.Map.Strict as StrMap
 import BasicData
 import Control.Monad.Trans.State
+--import Control.Monad
+import qualified Data.IntDisjointSet as DisjointSet
+import qualified Data.Traversable as Traversable
 
 evalNode :: Expression -> State (StrMap.Map Int FuncDesc) Datum
 evalNode (Node (Right dat) _) = return dat
@@ -79,13 +82,36 @@ evalNode (Node (Left If) (arg1:arg2:arg3:[])) = do
   return $ if a1 then a2 else a3
 
 evalNode (Node (Left Dfn) (arg1:[])) = do
-  let (newRetType,newFunc) = runState (addFunc arg1) FuncDesc{body=arg1,retType=GenVar (-1), argType=StrMap.empty}
-      retFunc = newFunc{retType=newRetType}
+  let (currTypes,currArgs) = addFunc (GenType (GenVar, 0)) arg1 (DisjointSet.singleton $ genTypeIntBijection (GenType (GenVar, 0))) StrMap.empty
+      specTypes    = getSpecificest currTypes
+      specArgs     = StrMap.mapMaybe id $ fst $ runState (Traversable.mapM findSpecificType currArgs) (currTypes, specTypes) --mapping id is an awful hack, runs an O(n) operation an extra time...
+      Just specRet = fst $ runState (findSpecificType (GenType (GenVar, 0))) (currTypes, specTypes)
+      retFunc      = FuncDesc{body=arg1, retType=specRet, argType=specArgs} --retrieve ret/arg types from currTypes
   addFunc' retFunc  
   return $ DatB True --TODO?
   where addFunc' :: FuncDesc -> State (StrMap.Map Int FuncDesc) ()
-        addFunc' addF = state $ \fTable ->
-          ((), StrMap.insert (StrMap.size fTable) addF fTable)
+        addFunc' addF =
+          state $ \fTable -> ((), StrMap.insert (StrMap.size fTable) addF fTable)
+        getSpecificest :: DisjointSet.IntDisjointSet -> StrMap.Map TypeVar TypeVar
+        getSpecificest currTypes =
+          getSpecificest' (map (\(x,y) -> (genTypeIntBijectionInv x, genTypeIntBijectionInv y)) $
+                               fst $ DisjointSet.toList currTypes) StrMap.empty
+          where
+            --associate representative with min element in set
+            getSpecificest' :: [(TypeVar, TypeVar)] -> StrMap.Map TypeVar TypeVar -> StrMap.Map TypeVar TypeVar --state is best seen typevar
+            getSpecificest' [] soFar =
+              soFar
+            getSpecificest' ((tp, rep):rst) soFar =
+              case StrMap.lookup rep soFar of
+                Just bestSoFar -> getSpecificest' rst $ StrMap.insert rep (getMoreSpecific bestSoFar tp) soFar
+                Nothing        -> getSpecificest' rst $ StrMap.insert rep tp soFar
+        findSpecificType :: TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map TypeVar TypeVar) (Maybe TypeVar)
+        findSpecificType tp = do --looks up in specTypes. I need to look up in currTypes, and then look that up in specTypes
+          (curr, spec) <- get
+          return $ do
+            let (resM,_) = DisjointSet.lookup (genTypeIntBijection tp) curr
+            res <- resM
+            StrMap.lookup (genTypeIntBijectionInv res) spec
 
 --TODO
 evalNode n@(Node (Left Call) (fID:args)) =
@@ -120,54 +146,64 @@ evalFunc :: Expression -> State (StrMap.Map Int FuncDesc) Datum
 evalFunc _ = 
   return $ DatB True
 
-addFunc :: Expression -> State FuncDesc TypeVar
-addFunc (Node (Right dat) []) = 
-  state $ \currFunc ->
-            let argsCurr = argType currFunc
-                argsSize = StrMap.size argsCurr
-              in case isFid(dat) of
-                  Left argId ->
-                    case argId `StrMap.lookup` argsCurr of
-                         Just tp -> (tp, currFunc)
-                         --Nothing adds a new arg variable to the current function
-                         Nothing -> (GenVar (argsSize),
-                                     currFunc{argType=(StrMap.insert argsSize (GenVar argsSize) argsCurr)})
-                  Right d  -> (d, currFunc)
-  where isFid :: Datum -> Either Int TypeVar
-        {-isFid (DatB _)    = Right $ SpecVar $ DatB False --default values
-        isFid (DatI _)    = Right $ SpecVar $ DatI 0
-        isFid (DatD _)    = Right $ SpecVar $ DatD 0.0
-        isFid (ListI _)   = Right $ SpecVar $ ListI [0]
-        isFid (ListB _)   = Right $ SpecVar $ ListB [False]
-        isFid (ListD _)   = Right $ SpecVar $ ListD [0.0]
-        isFid (FuncId _)  = Right $ SpecVar $ FuncId 0-}
-        isFid (FuncArg x) = Left x
-        isFid d           = Right $ SpecVar d
-        
-addFunc (Node (Left Add) (arg1:arg2:[])) = do
-    t1 <- addFunc arg1
-    t2 <- addFunc arg2
-    let (mt1,mt2) = specifyVars (makeNum t1) (makeNum t2)
-    currFunc <- get
-    case mt1 of
-      SpecVar d -> currFunc
-       
-      
+genTypeIntBijection :: TypeVar -> Int
+genTypeIntBijection (GenType (genT, genId)) = fromEnum (maxBound::GenericType) * genId + (fromEnum genT)
+genTypeIntBijection (SpecType x) = -(fromEnum x)
+
+--genTypeIntBijectionArg :: Int -> Int
+--genTypeIntBijectionArg :: genId = ((maxBound::GenericType)+1) * genId + (maxBound::GenericType) --arg is a funcarg
+
+genTypeIntBijectionInv :: Int -> TypeVar
+genTypeIntBijectionInv x | x>=0      = GenType  $
+                                       let (d, m) = divMod x $ fromEnum (maxBound::GenericType) in
+                                         (toEnum m, d)
+                         | otherwise = SpecType $ toEnum (-x)
+
+getMoreSpecific :: TypeVar -> TypeVar -> TypeVar -- assuming correctness
+getMoreSpecific (SpecType t1) _                                    = SpecType t1
+getMoreSpecific _ (SpecType t1)                                    = SpecType t1
+getMoreSpecific (GenType (ListVar, t1)) (GenType (ListVar, _))     = GenType (ListVar, t1)
+getMoreSpecific (GenType (ListVar, t1)) (GenType (ListNumVar, _))  = GenType (ListNumVar, t1)
+getMoreSpecific (GenType (ListNumVar, t1)) (GenType (ListVar, _))  = GenType (ListNumVar, t1)
+getMoreSpecific (GenType (SingletonVar, t1)) (GenType (NumVar, _)) = GenType (NumVar, t1)
+getMoreSpecific (GenType (NumVar, t1)) (GenType (SingletonVar, _)) = GenType (NumVar, t1)
+getMoreSpecific (GenType (GenVar, _)) (GenType t1)                 = GenType t1
+getMoreSpecific (GenType t1) (GenType (GenVar, _))                 = GenType t1
+                                       
+--passed in typevars are types of arguments known so far, in order
+addFunc :: TypeVar -> Expression -> DisjointSet.IntDisjointSet -> StrMap.Map Int TypeVar -> (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar)
+addFunc currT (Node (Right dat) []) currTypes currArgs =
+  case dat of
+    FuncArg argId ->
+      case argId `StrMap.lookup` currArgs of --already has a type
+          Just argTp -> (DisjointSet.union (genTypeIntBijection currT) (genTypeIntBijection argTp) currTypes, currArgs) --They must be compatible, so no check
+          Nothing    -> (currTypes, StrMap.insert argId currT currArgs) --now the argument argId has type currT
+    d             -> (DisjointSet.union (genTypeIntBijection currT) (genTypeIntBijection $ SpecType $ datToType d) currTypes, currArgs)
+
+--addFunc (currT:[]) (Node (Left Add) (arg1:arg2:[])) currTypes currArgs =
+--  if getMoreSpecific (NumVar 0) currT == (NumVar 0) then
+    --union currT with numVar 0
+    --else do nothing
+  --let (currTypes', currArgs') = addFunc 
+  
+{-getSpecificest' :: DisjointSet.IntDisjointSet -> StrMap.Map TypeVar TypeVar
+getSpecificest' currTypes =
+  getSpecificest'' (map (\(x,y) -> (genTypeIntBijectionInv x, genTypeIntBijectionInv y)) $
+                       fst $ DisjointSet.toList currTypes) StrMap.empty
   where
-    makeNum :: TypeVar -> TypeVar
-    makeNum (NumVar x)         = NumVar x
-    makeNum (GenVar x)         = NumVar x
-    makeNum (SingletonVar x)   = NumVar x
-    makeNum (SpecVar (DatI x)) = SpecVar (DatI x)
-    makeNum (SpecVar (DatD x)) = SpecVar (DatD x)
-    --makeNum _                = Nothing
-    specifyVars :: TypeVar -> TypeVar -> (TypeVar, TypeVar)
-    --specifyVars (SpecVar (DatI x)) (SpecVar (DatI y)) = ((SpecVar (DatI x)), (SpecVar (DatI y)))
-    --specifyVars (SpecVar (DatD x)) (SpecVar (DatD y)) = ((SpecVar (DatD x)), (SpecVar (DatD y)))
-    specifyVars (SpecVar d1) (SpecVar d2) = (SpecVar d1, SpecVar d2) --assuming valid, covers above
-    specifyVars t1 (SpecVar d2) = specifyVars (SpecVar d2) t1 --swap, specvar always first now
-    specifyVars (SpecVar (DatI x1)) (GenVar t2) = (SpecVar (DatI x1), SpecVar (DatI 0))
-    specifyVars (SpecVar (DatD x1)) (GenVar t2) = (SpecVar (DatD x1), SpecVar (DatD 0.0))
-    specifyVars (SpecVar (DatI x1)) (NumVar t2) = (SpecVar (DatI x1), SpecVar (DatI 0))
-    specifyVars (SpecVar (DatD x1)) (NumVar t2) = (SpecVar (DatD x1), SpecVar (DatD 0.0))
-    specifyVars (NumVar t1) (NumVar t2) = (NumVar t1, NumVar t1)
+    --associate representative with min element in set
+    getSpecificest'' :: [(TypeVar, TypeVar)] -> StrMap.Map TypeVar TypeVar -> StrMap.Map TypeVar TypeVar --state is best seen typevar
+    getSpecificest'' [] soFar =
+      soFar
+    getSpecificest'' ((tp, rep):rst) soFar =
+      case StrMap.lookup rep soFar of
+        Just bestSoFar -> getSpecificest'' rst $ StrMap.insert rep (getMoreSpecific bestSoFar tp) soFar
+        Nothing        -> getSpecificest'' rst $ StrMap.insert rep tp soFar
+
+findSpecificType' :: TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map TypeVar TypeVar) (Maybe TypeVar)
+findSpecificType' tp = do --looks up in specTypes. I need to look up in currTypes, and then look that up in specTypes
+  (curr, spec) <- get
+  return $ do
+    let (resM,_) = DisjointSet.lookup (genTypeIntBijection tp) curr
+    res <- resM
+    StrMap.lookup (genTypeIntBijectionInv res) spec-}

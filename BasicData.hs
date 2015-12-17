@@ -98,13 +98,34 @@ data Datum = DatB Bool
            | FuncId Int  --integer is 'name' of function
            deriving (Show)
 
-data TypeVar = ListVar      Int
-             | SingletonVar Int   --not a list
-             | GenVar       Int   --anything
-             | NumVar       Int   --numeric: double or int
-             | ListNumVar   Int   --list of numerics
-             | SpecVar      Datum --integer is an id, like type t0, t1
-             deriving (Show)
+data GenericType = ListVar     
+                 | SingletonVar --not a list
+                 | GenVar       --anything
+                 | NumVar       --numeric: double or int
+                 | ListNumVar   --list of numerics
+                 deriving (Show, Ord, Eq, Enum, Bounded)
+                          
+data SpecificType = DatBVar --no associated ints
+                  | DatIVar
+                  | DatDVar
+                  | ListBVar
+                  | ListIVar
+                  | ListDVar
+                  | FuncIdVar
+                  deriving (Show, Enum, Bounded, Ord, Eq)
+                           
+datToType :: Datum -> SpecificType
+datToType (DatB _) = DatBVar
+datToType (DatI _) = DatIVar
+datToType (DatD _) = DatDVar
+datToType (ListB _) = ListBVar
+datToType (ListI _) = ListIVar
+datToType (ListD _) = ListDVar
+datToType (FuncId _) = FuncIdVar
+                    
+data TypeVar = GenType (GenericType, Int) --integer is an id, like type t0, t1
+             | SpecType SpecificType
+             deriving (Show, Ord, Eq)
 
 data Action = MkContract Person Contract
             | MkCompany Good
