@@ -81,7 +81,7 @@ data Operator = Add
               | If
               | Dfn
               | Call  --takes a FuncId (function id, like func pointer) - id number of the function, and all the arguments to that function
-              | Map  --also takes an fid, along with a list to map over
+              | Map   --also takes an fid, along with a list to map over
               | Fold
               | MkList
               | ConsList
@@ -98,9 +98,10 @@ data Datum = DatB Bool
            | FuncId Int  --integer is 'name' of function
            deriving (Show)
 
-data GenericType = ListVar     
+--Curently, GenVar must be lexicographically first. Ugly, but true.
+data GenericType = GenVar       --anything 
                  | SingletonVar --not a list
-                 | GenVar       --anything
+                 | ListVar       
                  | NumVar       --numeric: double or int
                  | ListNumVar   --list of numerics
                  deriving (Show, Ord, Eq, Enum, Bounded)

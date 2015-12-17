@@ -8,6 +8,8 @@ import Control.Monad.Trans.State
 --import Control.Monad
 import qualified Data.IntDisjointSet as DisjointSet
 import qualified Data.Traversable as Traversable
+import qualified Data.Sequence as Sq
+--import qualified Debug.Trace as Tr
 
 evalNode :: Expression -> State (StrMap.Map Int FuncDesc) Datum
 evalNode (Node (Right dat) _) = return dat
@@ -82,7 +84,12 @@ evalNode (Node (Left If) (arg1:arg2:arg3:[])) = do
   return $ if a1 then a2 else a3
 
 evalNode (Node (Left Dfn) (arg1:[])) = do
-  let (currTypes,currArgs) = addFunc (GenType (GenVar, 0)) arg1 (DisjointSet.singleton $ genTypeIntBijection (GenType (GenVar, 0))) StrMap.empty
+  let typesInit = (genTypeIntBijection (GenType (GenVar, 0))):[genTypeIntBijection $ SpecType (maxBound::SpecificType)..genTypeIntBijection $ SpecType (minBound::SpecificType)]
+      (currTypes,currArgs,_) = snd $ runState (addFunc (GenType (GenVar, 0)) arg1)
+                                               (DisjointSet.fromList $ zip typesInit typesInit,
+                                               --((DisjointSet.singleton $ genTypeIntBijection (GenType (GenVar, 0))), --need to put all SpecVars in there, or let those be placed as needed
+                                               StrMap.empty,
+                                               (1 Sq.<|(Sq.replicate (fromEnum (maxBound::GenericType)) 0)))
       specTypes    = getSpecificest currTypes
       specArgs     = StrMap.mapMaybe id $ fst $ runState (Traversable.mapM findSpecificType currArgs) (currTypes, specTypes) --mapping id is an awful hack, runs an O(n) operation an extra time...
       Just specRet = fst $ runState (findSpecificType (GenType (GenVar, 0))) (currTypes, specTypes)
@@ -148,62 +155,70 @@ evalFunc _ =
 
 genTypeIntBijection :: TypeVar -> Int
 genTypeIntBijection (GenType (genT, genId)) = fromEnum (maxBound::GenericType) * genId + (fromEnum genT)
-genTypeIntBijection (SpecType x) = -(fromEnum x)
+genTypeIntBijection (SpecType x) = (-(fromEnum x))-1 --0 is taken by the positives
 
 --genTypeIntBijectionArg :: Int -> Int
 --genTypeIntBijectionArg :: genId = ((maxBound::GenericType)+1) * genId + (maxBound::GenericType) --arg is a funcarg
 
 genTypeIntBijectionInv :: Int -> TypeVar
-genTypeIntBijectionInv x | x>=0      = GenType  $
-                                       let (d, m) = divMod x $ fromEnum (maxBound::GenericType) in
-                                         (toEnum m, d)
-                         | otherwise = SpecType $ toEnum (-x)
+genTypeIntBijectionInv x | x>=0      = GenType $
+                                         let (d, m) = divMod x $ fromEnum (maxBound::GenericType) in
+                                           (toEnum m, d)
+                         | otherwise = SpecType $ toEnum $ (-x)-1 --0 is taken by the positives
 
 getMoreSpecific :: TypeVar -> TypeVar -> TypeVar -- assuming correctness
-getMoreSpecific (SpecType t1) _                                    = SpecType t1
-getMoreSpecific _ (SpecType t1)                                    = SpecType t1
-getMoreSpecific (GenType (ListVar, t1)) (GenType (ListVar, _))     = GenType (ListVar, t1)
-getMoreSpecific (GenType (ListVar, t1)) (GenType (ListNumVar, _))  = GenType (ListNumVar, t1)
-getMoreSpecific (GenType (ListNumVar, t1)) (GenType (ListVar, _))  = GenType (ListNumVar, t1)
-getMoreSpecific (GenType (SingletonVar, t1)) (GenType (NumVar, _)) = GenType (NumVar, t1)
-getMoreSpecific (GenType (NumVar, t1)) (GenType (SingletonVar, _)) = GenType (NumVar, t1)
-getMoreSpecific (GenType (GenVar, _)) (GenType t1)                 = GenType t1
-getMoreSpecific (GenType t1) (GenType (GenVar, _))                 = GenType t1
+getMoreSpecific (SpecType t1) _                                          = SpecType t1
+getMoreSpecific _ (SpecType t1)                                          = SpecType t1
+getMoreSpecific (GenType (ListVar, t1)) (GenType (ListVar, _))           = GenType (ListVar, t1)
+getMoreSpecific (GenType (NumVar, t1)) (GenType (NumVar, _))             = GenType (NumVar, t1)
+getMoreSpecific (GenType (SingletonVar, t1)) (GenType (SingletonVar, _)) = GenType (SingletonVar, t1)
+getMoreSpecific (GenType (ListNumVar, t1)) (GenType (ListNumVar, _))     = GenType (ListNumVar, t1)
+getMoreSpecific (GenType (ListVar, t1)) (GenType (ListNumVar, _))        = GenType (ListNumVar, t1)
+getMoreSpecific (GenType (ListNumVar, t1)) (GenType (ListVar, _))        = GenType (ListNumVar, t1)
+getMoreSpecific (GenType (SingletonVar, t1)) (GenType (NumVar, _))       = GenType (NumVar, t1)
+getMoreSpecific (GenType (NumVar, t1)) (GenType (SingletonVar, _))       = GenType (NumVar, t1)
+getMoreSpecific (GenType (GenVar, _)) (GenType t1)                       = GenType t1
+getMoreSpecific (GenType t1) (GenType (GenVar, _))                       = GenType t1
                                        
 --passed in typevars are types of arguments known so far, in order
-addFunc :: TypeVar -> Expression -> DisjointSet.IntDisjointSet -> StrMap.Map Int TypeVar -> (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar)
-addFunc currT (Node (Right dat) []) currTypes currArgs =
-  case dat of
+addFunc :: TypeVar -> Expression -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int) ()
+addFunc currT (Node (Right dat) []) = do
+  (currTypes, currArgs, validVals) <- get
+  put $ case dat of
     FuncArg argId ->
       case argId `StrMap.lookup` currArgs of --already has a type
-          Just argTp -> (DisjointSet.union (genTypeIntBijection currT) (genTypeIntBijection argTp) currTypes, currArgs) --They must be compatible, so no check
-          Nothing    -> (currTypes, StrMap.insert argId currT currArgs) --now the argument argId has type currT
-    d             -> (DisjointSet.union (genTypeIntBijection currT) (genTypeIntBijection $ SpecType $ datToType d) currTypes, currArgs)
+          Just argTp -> (DisjointSet.union (genTypeIntBijection currT) (genTypeIntBijection argTp) currTypes, currArgs, validVals) --They must be compatible, so no check
+          Nothing    -> (currTypes, StrMap.insert argId currT currArgs, validVals) --now the argument argId has type currT
+    d             -> (DisjointSet.union (genTypeIntBijection currT) (genTypeIntBijection $ SpecType $ datToType d) currTypes, currArgs, validVals)
 
---addFunc (currT:[]) (Node (Left Add) (arg1:arg2:[])) currTypes currArgs =
---  if getMoreSpecific (NumVar 0) currT == (NumVar 0) then
-    --union currT with numVar 0
-    --else do nothing
-  --let (currTypes', currArgs') = addFunc 
-  
-{-getSpecificest' :: DisjointSet.IntDisjointSet -> StrMap.Map TypeVar TypeVar
-getSpecificest' currTypes =
-  getSpecificest'' (map (\(x,y) -> (genTypeIntBijectionInv x, genTypeIntBijectionInv y)) $
-                       fst $ DisjointSet.toList currTypes) StrMap.empty
-  where
-    --associate representative with min element in set
-    getSpecificest'' :: [(TypeVar, TypeVar)] -> StrMap.Map TypeVar TypeVar -> StrMap.Map TypeVar TypeVar --state is best seen typevar
-    getSpecificest'' [] soFar =
-      soFar
-    getSpecificest'' ((tp, rep):rst) soFar =
-      case StrMap.lookup rep soFar of
-        Just bestSoFar -> getSpecificest'' rst $ StrMap.insert rep (getMoreSpecific bestSoFar tp) soFar
-        Nothing        -> getSpecificest'' rst $ StrMap.insert rep tp soFar
+addFunc currT (Node (Left Add) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2]  (GenType (NumVar, 0))
+addFunc currT (Node (Left Subt) (arg1:arg2:[])) = setArgsToType currT [arg1,arg2]  (GenType (NumVar, 0))
+addFunc currT (Node (Left Div) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2]  (GenType (NumVar, 0))
+addFunc currT (Node (Left Mul) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2]  (GenType (NumVar, 0))
+addFunc currT (Node (Left Lt) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2]  (GenType (NumVar, 0))
+addFunc currT (Node (Left Gt) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2]  (GenType (NumVar, 0))
+addFunc currT (Node (Left Eq) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2]  (GenType (GenVar, 0))
+addFunc currT (Node (Left Not) (arg1:[]))       = setArgsToType currT [arg1]       (SpecType DatBVar)
+addFunc currT (Node (Left And) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2]  (SpecType DatBVar)
+addFunc currT (Node (Left Or) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2]  (SpecType DatBVar)
+addFunc currT (Node (Left If) (arg1:arg2:arg3:[])) = do
+  setArgsToType (SpecType DatBVar) [arg1] (SpecType DatBVar) --is the DatBVar instead of currT correct? I believe it is.
+  setArgsToType currT [arg2,arg3] (GenType (GenVar, 0))
 
-findSpecificType' :: TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map TypeVar TypeVar) (Maybe TypeVar)
-findSpecificType' tp = do --looks up in specTypes. I need to look up in currTypes, and then look that up in specTypes
-  (curr, spec) <- get
-  return $ do
-    let (resM,_) = DisjointSet.lookup (genTypeIntBijection tp) curr
-    res <- resM
-    StrMap.lookup (genTypeIntBijectionInv res) spec-}
+setArgsToType :: TypeVar -> [Expression] -> TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int) ()
+setArgsToType currT args newSpecType= do
+  (currTypes, currArgs, validVals) <- get
+  let (newNumVar,validVals') = case newSpecType of
+        GenType (t,_) ->
+          let newNumVarVal = validVals `Sq.index` fromEnum t in
+            (GenType (t, newNumVarVal), Sq.update (fromEnum t) (newNumVarVal+1) validVals)
+        SpecType t ->
+          (SpecType t, validVals)
+     --let newNumVar = GenType (t, newNumVarVal) --new indexing not passed on fixed!
+  let (specNumVar,currTypes') =
+        if getMoreSpecific currT newNumVar == newNumVar then
+          (newNumVar,DisjointSet.union (genTypeIntBijection currT) (genTypeIntBijection newNumVar) $ DisjointSet.insert (genTypeIntBijection newNumVar) currTypes)
+          else (currT,currTypes)
+  put (currTypes', currArgs, validVals')
+  _ <- mapM (addFunc specNumVar) args
+  return ()
