@@ -80,38 +80,39 @@ data Operator = Add
               | Or
               | If
               | Dfn
-              | Call  --takes a FuncId (function id, like func pointer) - id number of the function, and all the arguments to that function
-              | Map   --also takes an fid, along with a list to map over
-              | Fold
-              | MkList
-              | ConsList
+              | Call  --todo --takes a FuncId (function id, like func pointer) - id number of the function, and all the arguments to that function
+              | Map   --todo --also takes an fid, along with a list to map over
+              | Fold  --todo 
+              | MkList   --todo add
+              | ConsList --todo add
               | AppLists
               deriving (Show)
 
-data Datum = DatB Bool
+data Datum = DatB Bool --takes a monad - the list monad or the identity. I think that works
            | DatI Integer
            | DatD Double
-           | ListB [Bool]
-           | ListI [Integer]
-           | ListD [Double]
+--               | ListB [Bool]
+--               | ListI [Integer]
+--               | ListD [Double]
            | FuncArg Int --the integer is the 'name' of the argument. Types are inferred.
            | FuncId Int  --integer is 'name' of function
-           deriving (Show)
+           | ListDat SpecificType [Datum]
+           deriving (Show, Eq)
 
 --Curently, GenVar must be lexicographically first. Ugly, but true.
-data GenericType = GenVar       --anything 
-                 | SingletonVar --not a list
-                 | ListVar       
+data GenericType = GenVar       --anything
                  | NumVar       --numeric: double or int
-                 | ListNumVar   --list of numerics
+--                 | SingletonVar --not a list. Don't put it in a ListType --I think I don't actually need this
+--                 | ListVar      --list of anything
+--                 | ListNumVar   --list of numerics
                  deriving (Show, Ord, Eq, Enum, Bounded)
                           
 data SpecificType = DatBVar --no associated ints
                   | DatIVar
                   | DatDVar
-                  | ListBVar
-                  | ListIVar
-                  | ListDVar
+--                  | ListBVar
+--                  | ListIVar
+--                  | ListDVar
                   | FuncIdVar
                   deriving (Show, Enum, Bounded, Ord, Eq)
                            
@@ -119,13 +120,14 @@ datToType :: Datum -> SpecificType
 datToType (DatB _) = DatBVar
 datToType (DatI _) = DatIVar
 datToType (DatD _) = DatDVar
-datToType (ListB _) = ListBVar
-datToType (ListI _) = ListIVar
-datToType (ListD _) = ListDVar
+--datToType (ListB _) = ListBVar
+--datToType (ListI _) = ListIVar
+--datToType (ListD _) = ListDVar
 datToType (FuncId _) = FuncIdVar
                     
 data TypeVar = GenType (GenericType, Int) --integer is an id, like type t0, t1
              | SpecType SpecificType
+             | ListType TypeVar
              deriving (Show, Ord, Eq)
 
 data Action = MkContract Person Contract

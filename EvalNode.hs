@@ -59,9 +59,10 @@ evalNode (Node (Left Gt) (arg1:arg2:[])) = do
 evalNode (Node (Left Eq) (arg1:arg2:[])) = do
   a1 <- evalNode arg1
   a2 <- evalNode arg2
-  case (a1,a2) of
-    (DatD a, DatD b) -> return $ DatB (a==b)
-    (DatI a, DatI b) -> return $ DatB (a==b)
+  return $ DatB (a1==a2)
+  --case (a1,a2) of
+  --  (DatD a, DatD b) -> return $ DatB (a==b)
+  --  (DatI a, DatI b) -> return $ DatB (a==b)
 
 evalNode (Node (Left Not) (arg1:[])) = do
   DatB a1 <- evalNode arg1
@@ -127,26 +128,27 @@ evalNode n@(Node (Left Call) (fID:args)) =
 evalNode (Node (Left MkList) (arg1:[])) = do
   a1 <- evalNode arg1
   return $ case a1 of
-       DatB a -> ListB [a]
-       DatI a -> ListI [a]
-       DatD a -> ListD [a]
+       DatB a -> ListDat DatBVar [DatB a]
+       DatI a -> ListDat DatIVar [DatI a]
+       DatD a -> ListDat DatDVar [DatD a]
+       ListDat t a -> ListDat t $ [ListDat t a]
 
 evalNode (Node (Left ConsList) (arg1:arg2:[])) = do
   a1 <- evalNode arg1
   a2 <- evalNode arg2
   return $ case (a1,a2) of
-       (DatB a, ListB b) -> ListB $ a:b
-       (DatI a, ListI b) -> ListI $ a:b
-       (DatD a, ListD b) -> ListD $ a:b
+       (DatB a, ListDat DatBVar b) -> ListDat DatBVar $ (DatB a):b
+       (DatI a, ListDat DatIVar b) -> ListDat DatIVar $ (DatI a):b
+       (DatD a, ListDat DatDVar b) -> ListDat DatDVar $ (DatD a):b
 
 evalNode (Node (Left AppLists) (arg1:arg2:[])) = do
   a1 <- evalNode arg1
   a2 <- evalNode arg2
   return $ case (a1,a2) of
-       (ListB a, ListB b) -> ListB $ a++b
-       (ListI a, ListI b) -> ListI $ a++b
-       (ListD a, ListD b) -> ListD $ a++b
-
+       (ListDat t1 a, ListDat t2 b) -> ListDat t1 $ f t1 t2 a b --a++b
+       --(ListDat a, ListDat b) -> ListDat $ a++b
+       --(ListDat a, ListDat b) -> ListDat $ a++b
+  where f t1 t2 a b | t1==t2 = a++b
 --TODO
 evalFunc :: Expression -> State (StrMap.Map Int FuncDesc) Datum
 --evalFunc (Node (Left Dfn) args) =
@@ -167,19 +169,24 @@ genTypeIntBijectionInv x | x>=0      = GenType $
                          | otherwise = SpecType $ toEnum $ (-x)-1 --0 is taken by the positives
 
 getMoreSpecific :: TypeVar -> TypeVar -> TypeVar -- assuming correctness
-getMoreSpecific (SpecType t1) _                                          = SpecType t1
-getMoreSpecific _ (SpecType t1)                                          = SpecType t1
-getMoreSpecific (GenType (ListVar, t1)) (GenType (ListVar, _))           = GenType (ListVar, t1)
-getMoreSpecific (GenType (NumVar, t1)) (GenType (NumVar, _))             = GenType (NumVar, t1)
-getMoreSpecific (GenType (SingletonVar, t1)) (GenType (SingletonVar, _)) = GenType (SingletonVar, t1)
-getMoreSpecific (GenType (ListNumVar, t1)) (GenType (ListNumVar, _))     = GenType (ListNumVar, t1)
-getMoreSpecific (GenType (ListVar, t1)) (GenType (ListNumVar, _))        = GenType (ListNumVar, t1)
-getMoreSpecific (GenType (ListNumVar, t1)) (GenType (ListVar, _))        = GenType (ListNumVar, t1)
-getMoreSpecific (GenType (SingletonVar, t1)) (GenType (NumVar, _))       = GenType (NumVar, t1)
-getMoreSpecific (GenType (NumVar, t1)) (GenType (SingletonVar, _))       = GenType (NumVar, t1)
-getMoreSpecific (GenType (GenVar, _)) (GenType t1)                       = GenType t1
-getMoreSpecific (GenType t1) (GenType (GenVar, _))                       = GenType t1
-                                       
+getMoreSpecific (SpecType t1) _                              = SpecType t1
+getMoreSpecific _ (SpecType t1)                              = SpecType t1
+getMoreSpecific (GenType (NumVar, t1)) (GenType (NumVar, _)) = GenType (NumVar, t1)
+getMoreSpecific (ListType t1) (ListType t2)                  = ListType $ getMoreSpecific t1 t2
+getMoreSpecific t1 (GenType (GenVar, _)) = t1
+getMoreSpecific (GenType (GenVar, _)) t1 = t1
+--getMoreSpecific (GenType (ListVar, t1)) (GenType (ListVar, _))           = GenType (ListVar, t1)
+--getMoreSpecific (GenType (SingletonVar, t1)) (GenType (SingletonVar, _)) = GenType (SingletonVar, t1)
+--getMoreSpecific (GenType (ListNumVar, t1)) (GenType (ListNumVar, _))     = GenType (ListNumVar, t1)
+--getMoreSpecific (GenType (ListVar, t1)) (GenType (ListNumVar, _))        = GenType (ListNumVar, t1)
+--getMoreSpecific (GenType (ListNumVar, t1)) (GenType (ListVar, _))        = GenType (ListNumVar, t1)
+--getMoreSpecific (GenType (SingletonVar, t1)) (GenType (NumVar, _))       = GenType (NumVar, t1)
+--getMoreSpecific (GenType (NumVar, t1)) (GenType (SingletonVar, _))       = GenType (NumVar, t1)
+
+getListInnerType :: TypeVar -> TypeVar
+getListInnerType (ListType t) = getListInnerType t
+getListInnerType t = t
+                                                                           
 --passed in typevars are types of arguments known so far, in order
 addFunc :: TypeVar -> Expression -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int) ()
 addFunc currT (Node (Right dat) []) = do
@@ -191,34 +198,38 @@ addFunc currT (Node (Right dat) []) = do
           Nothing    -> (currTypes, StrMap.insert argId currT currArgs, validVals) --now the argument argId has type currT
     d             -> (DisjointSet.union (genTypeIntBijection currT) (genTypeIntBijection $ SpecType $ datToType d) currTypes, currArgs, validVals)
 
-addFunc currT (Node (Left Add) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2]  (GenType (NumVar, 0))
-addFunc currT (Node (Left Subt) (arg1:arg2:[])) = setArgsToType currT [arg1,arg2]  (GenType (NumVar, 0))
-addFunc currT (Node (Left Div) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2]  (GenType (NumVar, 0))
-addFunc currT (Node (Left Mul) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2]  (GenType (NumVar, 0))
-addFunc currT (Node (Left Lt) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2]  (GenType (NumVar, 0))
-addFunc currT (Node (Left Gt) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2]  (GenType (NumVar, 0))
-addFunc currT (Node (Left Eq) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2]  (GenType (GenVar, 0))
-addFunc currT (Node (Left Not) (arg1:[]))       = setArgsToType currT [arg1]       (SpecType DatBVar)
-addFunc currT (Node (Left And) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2]  (SpecType DatBVar)
-addFunc currT (Node (Left Or) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2]  (SpecType DatBVar)
+addFunc currT (Node (Left Add) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2] (GenType (NumVar, 0))
+addFunc currT (Node (Left Subt) (arg1:arg2:[])) = setArgsToType currT [arg1,arg2] (GenType (NumVar, 0))
+addFunc currT (Node (Left Div) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2] (GenType (NumVar, 0))
+addFunc currT (Node (Left Mul) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2] (GenType (NumVar, 0))
+addFunc currT (Node (Left Lt) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2] (GenType (NumVar, 0))
+addFunc currT (Node (Left Gt) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2] (GenType (NumVar, 0))
+addFunc currT (Node (Left Eq) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2] (GenType (GenVar, 0))
+addFunc currT (Node (Left Not) (arg1:[]))       = setArgsToType currT [arg1]      (SpecType DatBVar)
+addFunc currT (Node (Left And) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2] (SpecType DatBVar)
+addFunc currT (Node (Left Or) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2] (SpecType DatBVar)
 addFunc currT (Node (Left If) (arg1:arg2:arg3:[])) = do
   setArgsToType (SpecType DatBVar) [arg1] (SpecType DatBVar) --is the DatBVar instead of currT correct? I believe it is.
   setArgsToType currT [arg2,arg3] (GenType (GenVar, 0))
+addFunc currT (Node (Left AppLists) (arg1:arg2:[])) =
+  setArgsToType currT [arg1,arg2] (ListType $ GenType $ (GenVar, 0))
 
+--currT is the return type, says that the arguments given must be a subclass of the return type; potentially more specific based on newSpecType
 setArgsToType :: TypeVar -> [Expression] -> TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int) ()
-setArgsToType currT args newSpecType= do
+setArgsToType currT args specType= do
   (currTypes, currArgs, validVals) <- get
-  let (newNumVar,validVals') = case newSpecType of
+  let specInnerType = getListInnerType specType
+  let currInnerT = getListInnerType currT
+  let (newGenVar,validVals') = case specInnerType of
         GenType (t,_) ->
-          let newNumVarVal = validVals `Sq.index` fromEnum t in
-            (GenType (t, newNumVarVal), Sq.update (fromEnum t) (newNumVarVal+1) validVals)
+          let newVarVal = validVals `Sq.index` fromEnum t in
+            (GenType (t, newVarVal), Sq.update (fromEnum t) (newVarVal+1) validVals)
         SpecType t ->
           (SpecType t, validVals)
-     --let newNumVar = GenType (t, newNumVarVal) --new indexing not passed on fixed!
-  let (specNumVar,currTypes') =
-        if getMoreSpecific currT newNumVar == newNumVar then
-          (newNumVar,DisjointSet.union (genTypeIntBijection currT) (genTypeIntBijection newNumVar) $ DisjointSet.insert (genTypeIntBijection newNumVar) currTypes)
-          else (currT,currTypes)
+  let (newCurrT,currTypes') =
+        if getMoreSpecific currInnerT newGenVar == newGenVar then --assumes correct types, so not worried about comparing list nesting
+          (newGenVar,DisjointSet.union (genTypeIntBijection currInnerT) (genTypeIntBijection newGenVar) $ DisjointSet.insert (genTypeIntBijection newGenVar) currTypes)
+          else (currT,currTypes) --could theoretically use old validVals in this case, the new number wasn't used
   put (currTypes', currArgs, validVals')
-  _ <- mapM (addFunc specNumVar) args
+  _ <- mapM (addFunc newCurrT) args
   return ()
