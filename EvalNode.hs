@@ -85,7 +85,7 @@ evalNode (Node (Left If) (arg1:arg2:arg3:[])) = do
   return $ if a1 then a2 else a3
 
 evalNode (Node (Left Dfn) (arg1:[])) = do
-  let typesInit = (genTypeIntBijection (GenType (GenVar, 0))):[genTypeIntBijection $ SpecType (maxBound::SpecificType)..genTypeIntBijection $ SpecType (minBound::SpecificType)]
+  let typesInit = (genTypeIntBijection (GenType (GenVar, 0))):[genTypeIntBijection $ SpecType (minBound::SpecificType)..genTypeIntBijection $ SpecType (maxBound::SpecificType)]
       (currTypes,currArgs,_) = snd $ runState (addFunc (GenType (GenVar, 0)) arg1)
                                                (DisjointSet.fromList $ zip typesInit typesInit,
                                                --((DisjointSet.singleton $ genTypeIntBijection (GenType (GenVar, 0))), --need to put all SpecVars in there, or let those be placed as needed
@@ -156,17 +156,38 @@ evalFunc _ =
   return $ DatB True
 
 genTypeIntBijection :: TypeVar -> Int
-genTypeIntBijection (GenType (genT, genId)) = fromEnum (maxBound::GenericType) * genId + (fromEnum genT)
-genTypeIntBijection (SpecType x) = (-(fromEnum x))-1 --0 is taken by the positives
+genTypeIntBijection t = bijection' 0 t
+  where bijection' numList t0 =
+          case t0 of
+            (GenType (genT, genId)) -> bijection'' numList $ fromEnum (maxBound::GenericType) * genId + (fromEnum genT) + (fromEnum (maxBound::SpecificType)) + 1 --last 2 terms give room for the specific types at the beginning
+            (SpecType x) -> bijection'' numList $ fromEnum x --made room in the positives for these
+            (ListType t1) -> bijection' (numList+1) t1
+        bijection'' numList numEnum = ((numList+numEnum)*(numList+numEnum+1) `div` 2) + numEnum
 
 --genTypeIntBijectionArg :: Int -> Int
 --genTypeIntBijectionArg :: genId = ((maxBound::GenericType)+1) * genId + (maxBound::GenericType) --arg is a funcarg
 
-genTypeIntBijectionInv :: Int -> TypeVar
+{-genTypeIntBijectionInv :: Int -> TypeVar
 genTypeIntBijectionInv x | x>=0      = GenType $
                                          let (d, m) = divMod x $ fromEnum (maxBound::GenericType) in
                                            (toEnum m, d)
                          | otherwise = SpecType $ toEnum $ (-x)-1 --0 is taken by the positives
+-}
+genTypeIntBijectionInv :: Int -> TypeVar
+genTypeIntBijectionInv z =
+  let w = floor $ ((sqrt $ (fromIntegral $ 8*z + 1)::Double) - 1) / 2
+      t = (w*w + w) `div` 2
+      numEnum = z - t
+      numList = w - numEnum
+  in getType' numList numEnum
+  where getInnerType' :: Int -> TypeVar
+        getInnerType' x | x > fromEnum (maxBound::SpecificType) =
+                          GenType $ let (d, m) = divMod (x-fromEnum (maxBound::SpecificType)-1) $ 1+fromEnum (maxBound::GenericType) in
+                                 (toEnum m, d)
+                        | otherwise = SpecType $ toEnum x
+        getType' :: Int -> Int -> TypeVar
+        getType' 0 numEnum = getInnerType' numEnum
+        getType' numList numEnum = ListType $ getType' (numList-1) numEnum                                 
 
 getMoreSpecific :: TypeVar -> TypeVar -> TypeVar -- assuming correctness
 getMoreSpecific (SpecType t1) _                              = SpecType t1
@@ -186,7 +207,13 @@ getMoreSpecific (GenType (GenVar, _)) t1 = t1
 getListInnerType :: TypeVar -> TypeVar
 getListInnerType (ListType t) = getListInnerType t
 getListInnerType t = t
-                                                                           
+
+getListOneLayerType :: TypeVar -> TypeVar
+getListOneLayerType t = 
+  case t of --it wants a return type of list, not anything else
+         ListType t1            -> t1
+         (GenType (GenVar, t1)) -> GenType (GenVar, t1)
+         
 --passed in typevars are types of arguments known so far, in order
 addFunc :: TypeVar -> Expression -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int) ()
 addFunc currT (Node (Right dat) []) = do
@@ -198,38 +225,84 @@ addFunc currT (Node (Right dat) []) = do
           Nothing    -> (currTypes, StrMap.insert argId currT currArgs, validVals) --now the argument argId has type currT
     d             -> (DisjointSet.union (genTypeIntBijection currT) (genTypeIntBijection $ SpecType $ datToType d) currTypes, currArgs, validVals)
 
-addFunc currT (Node (Left Add) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2] (GenType (NumVar, 0))
-addFunc currT (Node (Left Subt) (arg1:arg2:[])) = setArgsToType currT [arg1,arg2] (GenType (NumVar, 0))
-addFunc currT (Node (Left Div) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2] (GenType (NumVar, 0))
-addFunc currT (Node (Left Mul) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2] (GenType (NumVar, 0))
-addFunc currT (Node (Left Lt) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2] (GenType (NumVar, 0))
-addFunc currT (Node (Left Gt) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2] (GenType (NumVar, 0))
-addFunc currT (Node (Left Eq) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2] (GenType (GenVar, 0))
-addFunc currT (Node (Left Not) (arg1:[]))       = setArgsToType currT [arg1]      (SpecType DatBVar)
-addFunc currT (Node (Left And) (arg1:arg2:[]))  = setArgsToType currT [arg1,arg2] (SpecType DatBVar)
-addFunc currT (Node (Left Or) (arg1:arg2:[]))   = setArgsToType currT [arg1,arg2] (SpecType DatBVar)
+addFunc currT (Node (Left Add) (arg1:arg2:[]))  = specRetAndApplyToArgs currT [arg1,arg2] (GenType (NumVar, 0))
+addFunc currT (Node (Left Subt) (arg1:arg2:[])) = specRetAndApplyToArgs currT [arg1,arg2] (GenType (NumVar, 0))
+addFunc currT (Node (Left Div) (arg1:arg2:[]))  = specRetAndApplyToArgs currT [arg1,arg2] (GenType (NumVar, 0))
+addFunc currT (Node (Left Mul) (arg1:arg2:[]))  = specRetAndApplyToArgs currT [arg1,arg2] (GenType (NumVar, 0))
+addFunc currT (Node (Left Lt) (arg1:arg2:[]))   = do
+  --specRetAndApplyToArgs currT [arg1,arg2] (GenType (NumVar, 0))  --this is used incorrectly. It will specify that it's *arguments* must be numvars, which it does, but it also transforms them into DatBVars - currently when the given return value in currT is DatBVar it mandates that it's arguments become DatBVars, since that applies in other cases
+  specifyRetType currT (SpecType DatBVar)
+  newGenVar <- getNextValidVal $ GenType (NumVar, 0)
+  --(currTypes, currArgs, validVals) <- get
+  --let newVarVal = validVals `Sq.index` fromEnum NumVar
+  --let (newGenVar,validVals') = (GenType (NumVar, newVarVal), Sq.update (fromEnum NumVar) (newVarVal+1) validVals)
+  --put (currTypes, currArgs, validVals')
+  addFunc newGenVar arg1
+  addFunc newGenVar arg2
+addFunc currT (Node (Left Gt) (arg1:arg2:[]))   = do --specifyRetType currT [arg1,arg2] (GenType (NumVar, 0))
+  specifyRetType currT (SpecType DatBVar)
+  newGenVar <- getNextValidVal $ GenType (NumVar, 0)
+  addFunc newGenVar arg1
+  addFunc newGenVar arg2
+addFunc currT (Node (Left Eq) (arg1:arg2:[]))   = do {addFunc currT arg1; addFunc currT arg2; }  --specRetAndApplyToArgs currT [arg1,arg2] (GenType (GenVar, 0)) --some extraneous code here, forcing it to be a genvar doesn't do much
+addFunc currT (Node (Left Not) (arg1:[]))       = specRetAndApplyToArgs currT [arg1]      (SpecType DatBVar)
+addFunc currT (Node (Left And) (arg1:arg2:[]))  = specRetAndApplyToArgs currT [arg1,arg2] (SpecType DatBVar)
+addFunc currT (Node (Left Or) (arg1:arg2:[]))   = specRetAndApplyToArgs currT [arg1,arg2] (SpecType DatBVar)
 addFunc currT (Node (Left If) (arg1:arg2:arg3:[])) = do
-  setArgsToType (SpecType DatBVar) [arg1] (SpecType DatBVar) --is the DatBVar instead of currT correct? I believe it is.
-  setArgsToType currT [arg2,arg3] (GenType (GenVar, 0))
+  --specRetAndApplyToArgs (SpecType DatBVar) [arg1] (SpecType DatBVar) --is the DatBVar instead of currT correct? I believe it is. Only because it's specific - cannot do a similar thing with a genvar
+  addFunc (SpecType DatBVar) arg1 --can only specify the type like this because it's specific, need to get a number for a genvar
+  --specRetAndApplyToArgs currT [arg2,arg3] (GenType (GenVar, 0)) --some extraneous code here, forcing it to be a genvar doesn't do much
+  addFunc currT arg2 --no new restrictions on arg2, arg3
+  addFunc currT arg3
 addFunc currT (Node (Left AppLists) (arg1:arg2:[])) =
-  setArgsToType currT [arg1,arg2] (ListType $ GenType $ (GenVar, 0))
-
---currT is the return type, says that the arguments given must be a subclass of the return type; potentially more specific based on newSpecType
-setArgsToType :: TypeVar -> [Expression] -> TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int) ()
-setArgsToType currT args specType= do
-  (currTypes, currArgs, validVals) <- get
-  let specInnerType = getListInnerType specType
-  let currInnerT = getListInnerType currT
-  let (newGenVar,validVals') = case specInnerType of
-        GenType (t,_) ->
-          let newVarVal = validVals `Sq.index` fromEnum t in
-            (GenType (t, newVarVal), Sq.update (fromEnum t) (newVarVal+1) validVals)
-        SpecType t ->
-          (SpecType t, validVals)
-  let (newCurrT,currTypes') =
+  specRetAndApplyToArgs currT [arg1,arg2] (ListType $ GenType $ (GenVar, 0)) --broken - doesn't specify a genvar to a list; leaves it a genvar.
+--addFunc currT (Node (Left MkList) (arg1:[])) = addFunc (getListOneLayerType currT) arg1 --it wants a return type of list, not anything else
+--  case currT of --it wants a return type of list, not anything else
+--       ListType t            -> addFunc t arg1
+--       (GenType (GenVar, t)) -> addFunc (GenType (GenVar, t)) arg1
+--addFunc currT (Node (Left ConsList) (arg1:arg2:[])) = do
+--  addFunc (getListOneLayerType currT) arg1
+--  addFunc currT arg2
+  
+{-  let (newCurrT,currTypes') =
         if getMoreSpecific currInnerT newGenVar == newGenVar then --assumes correct types, so not worried about comparing list nesting
           (newGenVar,DisjointSet.union (genTypeIntBijection currInnerT) (genTypeIntBijection newGenVar) $ DisjointSet.insert (genTypeIntBijection newGenVar) currTypes)
           else (currT,currTypes) --could theoretically use old validVals in this case, the new number wasn't used
   put (currTypes', currArgs, validVals')
   _ <- mapM (addFunc newCurrT) args
+  return ()-}
+
+--currT is the return type, says that the arguments given must be a subclass of the return type; potentially more specific based on newSpecType
+specifyRetType :: TypeVar -> TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int) TypeVar
+specifyRetType currT specType = do
+  (currTypes, currArgs, validVals) <- get
+  let specInnerType = getListInnerType specType
+  let currInnerT = getListInnerType currT
+  newGenVar <- getNextValidVal specInnerType
+  let (newCurrT,currTypes') =
+        if getMoreSpecific currInnerT newGenVar == newGenVar then --assumes correct types, so not worried about comparing list nesting
+          (newGenVar,DisjointSet.union (genTypeIntBijection currInnerT) (genTypeIntBijection newGenVar) $ DisjointSet.insert (genTypeIntBijection newGenVar) currTypes)
+          else (currT,currTypes) --could theoretically use old validVals in this case, the new number wasn't used
+  put (currTypes', currArgs, validVals)
+  return newCurrT
+
+specRetAndApplyToArgs :: TypeVar -> [Expression] -> TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int) ()
+specRetAndApplyToArgs currT args specType = do
+  newCurrT <- specifyRetType currT specType
+  _ <- mapM (addFunc newCurrT) args
   return ()
+
+getNextValidVal :: TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int) TypeVar
+getNextValidVal whichT = do
+  (currTypes, currArgs, validVals) <- get
+  let (newGenVar,validVals') = case whichT of
+        GenType (t,_) ->
+          let newVarVal = validVals `Sq.index` fromEnum t in
+            (GenType (t, newVarVal), Sq.update (fromEnum t) (newVarVal+1) validVals)
+        SpecType t ->
+          (SpecType t, validVals)
+  put (currTypes, currArgs, validVals')
+  return newGenVar
+
+--setNewArgType :: TypeVar -> [Expression] -> State  (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int) ()
+--setNewArgType newCurrT args = do
