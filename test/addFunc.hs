@@ -1,4 +1,4 @@
-module TestAddFunc
+module Main
        where
 import Data.Tree
 import LangData
