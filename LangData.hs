@@ -3,7 +3,7 @@ module LangData
 import Data.Tree
 import qualified Data.Map.Strict as Map
 
-data Operator = Add --everything done has been tested in addNode, not in evalNode
+data Operator = Add
               | Subt
               | Div
               | Mul
@@ -69,7 +69,7 @@ datToType (DatB _) = DatBVar
 datToType (DatI _) = DatIVar
 datToType (DatD _) = DatDVar
 datToType (FuncId _) = FuncIdVar
---datToType (ListDat spec [d]) = ListType (datToType d)
+datToType (ListDat spec _) = spec
 
 genTypeIntBijection :: TypeVar -> Int
 genTypeIntBijection t = bijection' 0 t

@@ -1,6 +1,5 @@
-module EvalNode
+module LangProc
        where
---import InternalProg
 import Data.Tree
 import qualified Data.Map.Strict as StrMap
 import LangData
@@ -9,7 +8,7 @@ import Control.Monad
 import qualified Data.IntDisjointSet as DisjointSet
 --import qualified Data.Traversable as Traversable
 import qualified Data.Sequence as Sq
-import qualified Data.List as DatLst
+--import qualified Data.List as DatLst
 --import Data.Maybe
 import qualified Data.Foldable as DatFold
 --import qualified Debug.Trace as Tr
@@ -135,20 +134,20 @@ evalNode (Node (Left Call) (fIDarg:args)) = do
   FuncId fid <- evalNode fIDarg
   let Just f = fid `StrMap.lookup` fTable
   argResults <- mapM evalNode args
-  let (argsMap, _) = DatLst.mapAccumL (\argMap (ind,arg) -> (StrMap.insert ind arg argMap,arg)) StrMap.empty (zip [1..] argResults)
+  let argsMap = StrMap.fromList (zip [0..] argResults)
   return $ evalState (evalNode $ body f) (fTable, argsMap)
 
 evalNode (Node (Left Map) (fIDarg:lstArg:[])) = do
-  ListDat specType lst <- evalNode lstArg
+  ListDat _ lst <- evalNode lstArg
   retLst <- mapM (\a -> evalNode (Node{rootLabel=Left Call, subForest=[fIDarg,Node{rootLabel=Right a, subForest=[]}]})) lst
-  return $ ListDat specType retLst
+  return $ ListDat (datToType . head $ retLst) retLst
 
 evalNode (Node (Left Fold) (fIDarg:startArg:lstArg:[])) = do
   ListDat _ lst <- evalNode lstArg --ignored argument is result type. Assuming types are safe as usual
   startDat <- evalNode startArg
   foldM (\start arg -> evalNode (Node{rootLabel=Left Call, subForest=[fIDarg,
-                                   Node{rootLabel=Right start, subForest=[]},
-                                   Node{rootLabel=Right arg, subForest=[]}]})) startDat lst
+                                   Node{rootLabel=Right arg, subForest=[]},
+                                   Node{rootLabel=Right start, subForest=[]}]})) startDat lst
 
 evalNode (Node (Left MkList) (arg1:[])) = do
   a1 <- evalNode arg1
@@ -223,10 +222,10 @@ addFunc currT (Node (Left Call) (fidArg:args)) = do
   let Just newRetInnerType = (getListInnerType $ retType fDesc) `StrMap.lookup` newValsArgMap
   unifyTypes currT $ setActListInnerType (retType fDesc) newRetInnerType --need this, not specifyRetType. That treats second arg as template, gets a valid val for it. We already did that.
   let addWithNewArg' (ind, arg) =
-        let Just ret = do
-            oldT <- StrMap.lookup ind (argType fDesc)
-            newArgT <- StrMap.lookup (getListInnerType oldT) newValsArgMap
-            Just $ addFunc (setActListInnerType oldT newArgT) arg
+        let Just ret =
+              do oldT <- StrMap.lookup ind (argType fDesc)
+                 newArgT <- StrMap.lookup (getListInnerType oldT) newValsArgMap
+                 Just $ addFunc (setActListInnerType oldT newArgT) arg
         in ret
   _ <- mapM addWithNewArg' $ (zip [(0::Int)..] args)
   return ()
