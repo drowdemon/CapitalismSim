@@ -175,6 +175,24 @@ evalNode (Node (Left AppLists) (arg1:arg2:[])) = do
        --(ListDat a, ListDat b) -> ListDat $ a++b
   where f t1 t2 a b | t1==t2 = a++b
 
+evalNode (Node (Left Ceil) (arg1:[])) = do
+  a1 <- evalNode arg1
+  return $ case a1 of
+             DatI a -> DatI a
+             DatD a -> DatI $ ceiling a
+
+evalNode (Node (Left Floor) (arg1:[])) = do
+  a1 <- evalNode arg1
+  return $ case a1 of
+             DatI a -> DatI a
+             DatD a -> DatI $ floor a
+
+evalNode (Node (Left ToDouble) (arg1:[])) = do
+  a1 <- evalNode arg1
+  return $ case a1 of
+             DatI a -> DatD $ fromIntegral a
+             DatD a -> DatD a
+             
 --first TypeVar is the return type this expression must have. The expression is the expression whose type we are evaluating
 --state monad has: a disjoint set containing all the typeswhich have been foiund to be equivalent
 --                 a map from the function argument ids to their types
@@ -268,7 +286,19 @@ addFunc currT (Node (Left ConsList) (arg1:arg2:[])) = do
   addFunc specT arg2
 addFunc currT (Node (Left AppLists) (arg1:arg2:[])) =
   specRetAndApplyToArgs currT [arg1,arg2] (ListType $ GenType $ (GenVar, 0)) --broken - doesn't specify a genvar to a list; leaves it a genvar. fixed?
-            
+addFunc currT (Node (Left Ceil) (arg1:[]))   = do
+  _ <- specifyRetType currT (SpecType DatIVar)
+  newGenVar <- getNextValidVal $ GenType (NumVar, 0)
+  addFunc newGenVar arg1
+addFunc currT (Node (Left Floor) (arg1:[]))   = do
+  _ <- specifyRetType currT (SpecType DatIVar)
+  newGenVar <- getNextValidVal $ GenType (NumVar, 0)
+  addFunc newGenVar arg1
+addFunc currT (Node (Left ToDouble) (arg1:[]))   = do
+  _ <- specifyRetType currT (SpecType DatDVar)
+  newGenVar <- getNextValidVal $ GenType (NumVar, 0)
+  addFunc newGenVar arg1
+
 --currT is the return type, says that the arguments given must be a subclass of the return type; potentially more specific based on newSpecType
 specifyRetType :: TypeVar -> TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int, StrMap.Map Int FuncDesc) TypeVar
 specifyRetType currT specType = do

@@ -21,6 +21,9 @@ data Operator = Add
               | MkList   
               | ConsList
               | AppLists
+              | Ceil
+              | Floor
+              | ToDouble
               deriving (Show,Eq)
 
 data Datum = DatB Bool --takes a monad - the list monad or the identity. I think that works

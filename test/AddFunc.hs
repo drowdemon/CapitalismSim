@@ -149,6 +149,20 @@ addFuncTest11 =
       (funcDesc2, _) = execState (evalNode testExpr11) (funcDesc1, StrMap.empty)
   in funcDesc2 ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left ConsList, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}, retType = ListType (GenType (GenVar,1)), argType = StrMap.fromList [(0,GenType (GenVar,1)),(1,ListType (GenType (GenVar,1)))]}),(1,FuncDesc {body = Node {rootLabel = Left Fold, subForest = [Node {rootLabel = Right (FuncId 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}, retType = ListType (GenType (GenVar,1)), argType = StrMap.fromList [(0,ListType (GenType (GenVar,1))),(1,ListType (GenType (GenVar,1)))]})]
 
+testExpr12 :: Expression
+testExpr12 = Node{rootLabel=Left Dfn, subForest=[
+              Node{rootLabel=Left Mul, subForest=[
+               Node{rootLabel=Left Floor, subForest=[
+                Node{rootLabel=Left Add, subForest=[
+                 Node{rootLabel=Left ToDouble, subForest=[
+                  Node{rootLabel=Right $ FuncArg 0, subForest=[]}]},
+                 Node{rootLabel=Right $ DatD 5.2, subForest=[]}]}]},
+               Node{rootLabel=Left Ceil, subForest=[
+                Node{rootLabel=Right $ FuncArg 1, subForest=[]}]}]}]}
+addFuncTest12 =
+  let (res, _) = execState (evalNode testExpr12) (StrMap.empty, StrMap.empty)
+  in "floor/ceil functions: " ~: res ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left Mul, subForest = [Node {rootLabel = Left Floor, subForest = [Node {rootLabel = Left Add, subForest = [Node {rootLabel = Left ToDouble, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []}]},Node {rootLabel = Right (DatD 5.2), subForest = []}]}]},Node {rootLabel = Left Ceil, subForest = [Node {rootLabel = Right (FuncArg 1), subForest = []}]}]}, retType = SpecType DatIVar, argType = StrMap.fromList [(0,GenType (NumVar,3)),(1,GenType (NumVar,4))]})]
+
 addFuncTests =  TestList [addFuncTest1,
                           addFuncTest2,
                           addFuncTest3,
@@ -159,7 +173,8 @@ addFuncTests =  TestList [addFuncTest1,
                           addFuncTest8,
                           addFuncTest9,
                           addFuncTest10,
-                          addFuncTest11]
+                          addFuncTest11,
+                          addFuncTest12]
 --main :: IO ()
 
   {-do

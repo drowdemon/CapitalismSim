@@ -175,6 +175,27 @@ testAppLists =
   let res = evalState (evalNode exprAppLists) (StrMap.empty, StrMap.empty)
   in "simple AppLists" ~: ListDat DatBVar [DatB True,DatB True,DatB False,DatB False] ~=? res
 
+exprCeil :: Expression
+exprCeil = Node{rootLabel=Left Ceil, subForest=[
+           Node{rootLabel=Right $ DatD 5.6, subForest=[]}]}
+testCeil =
+  let res = evalState (evalNode exprCeil) (StrMap.empty, StrMap.empty)
+  in "simple Ceil" ~: DatI 6 ~=? res
+
+exprFloor :: Expression
+exprFloor = Node{rootLabel=Left Floor, subForest=[
+           Node{rootLabel=Right $ DatD 5.6, subForest=[]}]}
+testFloor =
+  let res = evalState (evalNode exprFloor) (StrMap.empty, StrMap.empty)
+  in "simple Floor" ~: DatI 5 ~=? res
+
+exprToDouble :: Expression
+exprToDouble = Node{rootLabel=Left ToDouble, subForest=[
+           Node{rootLabel=Right $ DatI 5, subForest=[]}]}
+testToDouble =
+  let res = evalState (evalNode exprToDouble) (StrMap.empty, StrMap.empty)
+  in "simple ToDouble" ~: DatD 5.0 ~=? res
+
 evalNodeTests = TestList [testAdd
                          ,testSubt
                          ,testMul
@@ -191,4 +212,7 @@ evalNodeTests = TestList [testAdd
                          ,testFold
                          ,testMkList
                          ,testConsList
-                         ,testAppLists]
+                         ,testAppLists
+                         ,testCeil
+                         ,testFloor
+                         ,testToDouble]
