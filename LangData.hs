@@ -34,7 +34,7 @@ data Datum = DatB Bool --takes a monad - the list monad or the identity. I think
            | ListDat SpecificType [Datum]
            deriving (Show, Eq)
 
---Curently, GenVar must be lexicographically first. Ugly, but true.
+--Curently, GenVar must be lexicographically first. Ugly, but true. See execState call in getFuncDescFromNode in LangProc.hs
 data GenericType = GenVar       --anything
                  | NumVar       --numeric: double or int
                  deriving (Show, Ord, Eq, Enum, Bounded)
@@ -42,7 +42,7 @@ data GenericType = GenVar       --anything
 data SpecificType = DatBVar --no associated ints
                   | DatIVar
                   | DatDVar
-                  | FuncIdVar
+                  | FuncIdVar--currently this one has to be lexicographically last, but that might be fixed - see instantiateType in LangProc.hs
                   deriving (Show, Enum, Bounded, Ord, Eq)
                            
 data TypeVar = GenType (GenericType, Int) --integer is an id, like type t0, t1
@@ -58,14 +58,19 @@ data FuncDesc = FuncDesc
   deriving (Show,Eq)
   
 type Expression = (Tree (Either Operator Datum))
+type ExprNode = Either Operator Datum
 
-getMoreSpecific :: TypeVar -> TypeVar -> TypeVar -- assuming correctness
-getMoreSpecific (SpecType t1) _                              = SpecType t1
-getMoreSpecific _ (SpecType t1)                              = SpecType t1
-getMoreSpecific (GenType (NumVar, t1)) (GenType (NumVar, _)) = GenType (NumVar, t1)
-getMoreSpecific (ListType t1) (ListType t2)                  = ListType $ getMoreSpecific t1 t2
-getMoreSpecific t1 (GenType (GenVar, _))                     = t1
-getMoreSpecific (GenType (GenVar, _)) t1                     = t1
+getMoreSpecific :: TypeVar -> TypeVar -> Maybe TypeVar
+getMoreSpecific (SpecType t1) (SpecType t2)                  = if t1==t2 then Just $ SpecType t1 else Nothing
+--incorrect: if t1 is a datI and _ is a list, should be nothing
+getMoreSpecific (SpecType t1) _                              = Just $ SpecType t1
+getMoreSpecific _ (SpecType t1)                              = Just $ SpecType t1
+getMoreSpecific (GenType (NumVar, t1)) (GenType (NumVar, _)) = Just $ GenType (NumVar, t1)
+getMoreSpecific (ListType t1) (ListType t2)                  = fmap ListType $ getMoreSpecific t1 t2
+getMoreSpecific t1 (GenType (GenVar, _))                     = Just t1
+getMoreSpecific (GenType (GenVar, _)) t1                     = Just t1
+getMoreSpecific (ListType _) (GenType (NumVar, _))           = Nothing
+getMoreSpecific (GenType (NumVar, _)) (ListType _)           = Nothing
 
 datToType :: Datum -> SpecificType
 datToType (DatB _) = DatBVar
@@ -99,6 +104,11 @@ genTypeIntBijectionInv z =
         getType' 0 numEnum = getInnerType' numEnum
         getType' numList numEnum = ListType $ getType' (numList-1) numEnum
 
+setListInnerDat :: TypeVar -> Datum -> Datum
+setListInnerDat (ListType t) d@(ListDat s _) = setListInnerDat t $ ListDat s [d]
+setListInnerDat (ListType t) d = setListInnerDat t $ ListDat (datToType d) [d]
+setListInnerDat _ d = d
+
 getListInnerType :: TypeVar -> TypeVar
 getListInnerType (ListType t) = getListInnerType t
 getListInnerType t = t
@@ -108,11 +118,8 @@ setActListInnerType (ListType lst) t = ListType $ setActListInnerType lst t
 setActListInnerType _ t = t
 
 getListOneLayerType :: TypeVar -> TypeVar
-getListOneLayerType t = 
-  case t of --it wants a return type of list, not anything else
-         ListType t1            -> t1
-         t1                     -> t1
-         --(GenType (GenVar, t1)) -> GenType (GenVar, t1)
+getListOneLayerType (ListType t) = t
+getListOneLayerType t = t
 
 getShallowestInnerType :: TypeVar -> TypeVar -> (TypeVar, TypeVar, Bool)
 getShallowestInnerType (ListType t1) (ListType t2) = getShallowestInnerType t1 t2

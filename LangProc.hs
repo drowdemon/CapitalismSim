@@ -1,23 +1,26 @@
 module LangProc
        where
+import LangData
+
 import Data.Tree
 import qualified Data.Map.Strict as StrMap
-import LangData
 import Control.Monad.Trans.State
 import Control.Monad
 import qualified Data.IntDisjointSet as DisjointSet
---import qualified Data.Traversable as Traversable
 import qualified Data.Sequence as Sq
---import qualified Data.List as DatLst
---import Data.Maybe
 import qualified Data.Foldable as DatFold
+import qualified Data.Tree.Zipper as Zp
+import Data.Maybe
+--import Control.Applicative
+--import qualified Data.List.Extra as LsEx
+--import Control.Monad.Random
 --import qualified Debug.Trace as Tr
 
 --state is the function table, and the arguments to the function i.e. current values in FuncArg 0, 1, ...
 evalNode :: Expression -> State (StrMap.Map Int FuncDesc, StrMap.Map Int Datum) Datum
 evalNode (Node (Right (FuncArg x)) []) = do
   (_, args) <- get
-  return $ case x `StrMap.lookup` args of Just d -> d
+  return . fromJust $ x `StrMap.lookup` args
 evalNode (Node (Right dat) []) = return dat
 
 evalNode (Node (Left Add) (arg1:arg2:[])) = do
@@ -89,45 +92,12 @@ evalNode (Node (Left If) (arg1:arg2:arg3:[])) = do
 
 evalNode (Node (Left Dfn) (arg1:[])) = do
   (fTable,_) <- get
-  let typesInit = (genTypeIntBijection (GenType (GenVar, 0))):[genTypeIntBijection $ SpecType (minBound::SpecificType)..genTypeIntBijection $ SpecType (maxBound::SpecificType)]
-      (currTypes,currArgs,_,_) = snd $ runState (addFunc (GenType (GenVar, 0)) arg1) --note that fTable ret is ignored
-                                               (DisjointSet.fromList $ zip typesInit typesInit,
-                                               StrMap.empty,
-                                               (1 Sq.<|(Sq.replicate (fromEnum (maxBound::GenericType)) 0)),
-                                               fTable)
-      specTypes    = getSpecificest currTypes
-        --Tr.trace ((show currTypes)++" args "++(show currArgs)) $ getSpecificest currTypes
-      specArgs     = StrMap.map (findSpecificType' currTypes specTypes) currArgs
-      specRet      = findSpecificType' currTypes specTypes (GenType (GenVar, 0))
-      retFunc      = FuncDesc{body=arg1, retType=specRet, argType=specArgs} --retrieve ret/arg types from currTypes
+  let retFunc = getFuncDescFromNode fTable arg1
   addFunc' retFunc 
   return $ DatB True --TODO? Anonymous functions would require changing this.
   where addFunc' :: FuncDesc -> State (StrMap.Map Int FuncDesc, StrMap.Map Int Datum) ()
         addFunc' addF = modify f'
           where f' (fTable,args) = (StrMap.insert (StrMap.size fTable) addF fTable, args)
-        getSpecificest :: DisjointSet.IntDisjointSet -> StrMap.Map TypeVar TypeVar
-        getSpecificest currTypes =
-          getSpecificest' (map (\(x,y) -> (genTypeIntBijectionInv x, genTypeIntBijectionInv y)) $
-                               fst $ DisjointSet.toList currTypes) StrMap.empty
-          where
-            --associate representative with min element in set
-            getSpecificest' :: [(TypeVar, TypeVar)] -> StrMap.Map TypeVar TypeVar -> StrMap.Map TypeVar TypeVar --state is best seen typevar
-            getSpecificest' [] soFar = soFar
-            getSpecificest' ((tp, rep):rst) soFar =
-              case StrMap.lookup rep soFar of
-                Just bestSoFar -> getSpecificest' rst $ StrMap.insert rep (getMoreSpecific bestSoFar tp) soFar
-                Nothing        -> getSpecificest' rst $ StrMap.insert rep tp soFar
-        findSpecificType' :: DisjointSet.IntDisjointSet -> StrMap.Map TypeVar TypeVar -> TypeVar -> TypeVar
-        findSpecificType' curr spec tp = --looks up in currTypes, and then looks that up in specTypes
-          let Just ret =
-               do --maybe monad
-                 let (resM,_) = DisjointSet.lookup (genTypeIntBijection tp) curr
-                 res <- resM
-                 specT <- StrMap.lookup (genTypeIntBijectionInv res) spec
-                 case specT of
-                   ListType t -> Just . ListType $ findSpecificType' curr spec t
-                   t -> return t
-          in ret
 
 evalNode (Node (Left Call) (fIDarg:args)) = do
   (fTable,_) <- get
@@ -140,6 +110,7 @@ evalNode (Node (Left Call) (fIDarg:args)) = do
 evalNode (Node (Left Map) (fIDarg:lstArg:[])) = do
   ListDat _ lst <- evalNode lstArg
   retLst <- mapM (\a -> evalNode (Node{rootLabel=Left Call, subForest=[fIDarg,Node{rootLabel=Right a, subForest=[]}]})) lst
+  --TODO: ERROR ON EMPTY LIST
   return $ ListDat (datToType . head $ retLst) retLst
 
 evalNode (Node (Left Fold) (fIDarg:startArg:lstArg:[])) = do
@@ -152,11 +123,12 @@ evalNode (Node (Left Fold) (fIDarg:startArg:lstArg:[])) = do
 evalNode (Node (Left MkList) (arg1:[])) = do
   a1 <- evalNode arg1
   return $ case a1 of
-       DatB a      -> ListDat DatBVar [DatB a]
+       {-DatB a      -> ListDat DatBVar [DatB a]
        DatI a      -> ListDat DatIVar [DatI a]
        DatD a      -> ListDat DatDVar [DatD a]
-       FuncId a    -> ListDat FuncIdVar [FuncId a]
-       ListDat t a -> ListDat t $ [ListDat t a]
+       FuncId a    -> ListDat FuncIdVar [FuncId a]-}
+       ListDat t a -> ListDat t [ListDat t a]
+       d           -> ListDat (datToType d) [d]
 
 evalNode (Node (Left ConsList) (arg1:arg2:[])) = do
   a1 <- evalNode arg1
@@ -172,8 +144,7 @@ evalNode (Node (Left AppLists) (arg1:arg2:[])) = do
   a2 <- evalNode arg2
   return $ case (a1,a2) of
        (ListDat t1 a, ListDat t2 b) -> ListDat t1 $ f t1 t2 a b --a++b
-       --(ListDat a, ListDat b) -> ListDat $ a++b
-  where f t1 t2 a b | t1==t2 = a++b
+  where f t1 t2 a b | t1==t2 = a++b --can't resist *a bit* of typechecking
 
 evalNode (Node (Left Ceil) (arg1:[])) = do
   a1 <- evalNode arg1
@@ -192,13 +163,54 @@ evalNode (Node (Left ToDouble) (arg1:[])) = do
   return $ case a1 of
              DatI a -> DatD $ fromIntegral a
              DatD a -> DatD a
+
+--equivalence classes; argument types, next remaining valid type variable numbers, function table
+type InferSt = (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int, StrMap.Map Int FuncDesc)
+
+--runs addFunc
+getFuncDescFromNode :: StrMap.Map Int FuncDesc -> Expression -> FuncDesc
+getFuncDescFromNode fTable expr = do
+  let typesInit = (genTypeIntBijection (GenType (GenVar, 0))):[genTypeIntBijection $ SpecType (minBound::SpecificType)..genTypeIntBijection $ SpecType (maxBound::SpecificType)]
+      (currTypes,currArgs,_,_) = execState (addFunc (GenType (GenVar, 0)) expr) --note that fTable ret is ignored
+                                           (DisjointSet.fromList $ zip typesInit typesInit,
+                                           StrMap.empty,
+                                           (1 Sq.<|(Sq.replicate (fromEnum (maxBound::GenericType)) 0)),
+                                           fTable)
+      (specTypes,currTypes') = getSpecificest currTypes
+        --Tr.trace ((show currTypes)++" args "++(show currArgs)) $ getSpecificest currTypes
+      specArgs = StrMap.map (findSpecificType' currTypes' specTypes) currArgs
+      specRet  = findSpecificType' currTypes' specTypes (GenType (GenVar, 0))
+   in FuncDesc{body=expr, retType=specRet, argType=specArgs} --retrieve ret/arg types from currTypes
+  where getSpecificest :: DisjointSet.IntDisjointSet -> (StrMap.Map TypeVar TypeVar, DisjointSet.IntDisjointSet)
+        getSpecificest currTypes =
+          let (currTypesLst, currTypes') = DisjointSet.toList currTypes
+           in (getSpecificest' (map (\(x,y) -> (genTypeIntBijectionInv x, genTypeIntBijectionInv y)) currTypesLst) StrMap.empty, currTypes')
+          where
+            --associate representative with min element in set
+            getSpecificest' :: [(TypeVar, TypeVar)] -> StrMap.Map TypeVar TypeVar -> StrMap.Map TypeVar TypeVar --state is best seen typevar
+            getSpecificest' [] soFar = soFar
+            getSpecificest' ((tp, rep):rst) soFar =
+              case StrMap.lookup rep soFar of
+                Just bestSoFar -> getSpecificest' rst $ StrMap.insert rep (fromJust $ getMoreSpecific bestSoFar tp) soFar
+                Nothing        -> getSpecificest' rst $ StrMap.insert rep tp soFar
+        findSpecificType' :: DisjointSet.IntDisjointSet -> StrMap.Map TypeVar TypeVar -> TypeVar -> TypeVar
+        findSpecificType' curr spec tp = --looks up in currTypes, and then looks that up in specTypes
+          let Just ret =
+               do --maybe monad
+                 let (resM,_) = DisjointSet.lookup (genTypeIntBijection tp) curr
+                 res <- resM
+                 specT <- StrMap.lookup (genTypeIntBijectionInv res) spec
+                 case specT of --potential bug - need the list types and intermediate list types be in one of the data structures? Could just the innermost thing be there?
+                   ListType t -> Just . ListType $ findSpecificType' curr spec t
+                   t -> return t
+          in ret
              
 --first TypeVar is the return type this expression must have. The expression is the expression whose type we are evaluating
 --state monad has: a disjoint set containing all the typeswhich have been foiund to be equivalent
 --                 a map from the function argument ids to their types
 --                 a Sequence (list type) containing available new numbers for the generic types
 --                 a function table
-addFunc :: TypeVar -> Expression -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int, StrMap.Map Int FuncDesc) ()
+addFunc :: TypeVar -> Expression -> State InferSt ()
 addFunc currT (Node (Right dat) []) = do
   (currTypes, currArgs, validVals, fTable) <- get
   put $ case dat of
@@ -259,9 +271,6 @@ addFunc currT (Node (Left Map) (arg1:arg2:[])) = do
           oldArgT <- StrMap.lookup 0 (argType fDesc) --look up the 0th argument to the passed in function
           newInnerArgT <- StrMap.lookup (getListInnerType oldArgT) newValsArgMap
           Just $ (setActListInnerType oldArgT newInnerArgT) --we get the type of the argument
-  --(currTypes, currArgs, validVals, fTable) <- get
-  --let currTypes' = DisjointSet.insert (genTypeIntBijection $ ListType argT) currTypes
-  --put (currTypes', currArgs, validVals, fTable)
   addFunc (ListType argT) arg2 --arg2 has to be a list of the functions arg type
 
 addFunc currT (Node (Left Fold) (fIdArg:initArg:lstArg:[])) = do
@@ -300,7 +309,7 @@ addFunc currT (Node (Left ToDouble) (arg1:[]))   = do
   addFunc newGenVar arg1
 
 --currT is the return type, says that the arguments given must be a subclass of the return type; potentially more specific based on newSpecType
-specifyRetType :: TypeVar -> TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int, StrMap.Map Int FuncDesc) TypeVar
+specifyRetType :: TypeVar -> TypeVar -> State InferSt TypeVar
 specifyRetType currT specType = do
   let (matchInnerCurr, matchInnerSpec, firstDeepest) = getShallowestInnerType currT specType
   newGenVar <- case (if firstDeepest then matchInnerCurr else matchInnerSpec) of
@@ -308,19 +317,19 @@ specifyRetType currT specType = do
                     _          -> getNextValidVal matchInnerSpec
   (currTypes, currArgs, validVals, fTable) <- get
   let (newCurrT,currTypes') =
-        if getMoreSpecific matchInnerCurr newGenVar == newGenVar then --assumes correct types, so not worried about comparing list nesting
+        if fromJust (getMoreSpecific matchInnerCurr newGenVar) == newGenVar then --assumes correct types, so not worried about comparing list nesting
           (newGenVar,DisjointSet.union (genTypeIntBijection matchInnerCurr) (genTypeIntBijection newGenVar) $ DisjointSet.insert (genTypeIntBijection newGenVar) currTypes)
           else (currT,currTypes) --could theoretically use old validVals in this case, the new number wasn't used
   put (currTypes', currArgs, validVals, fTable)
   return newCurrT
 
-specRetAndApplyToArgs :: TypeVar -> [Expression] -> TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int, StrMap.Map Int FuncDesc) ()
+specRetAndApplyToArgs :: TypeVar -> [Expression] -> TypeVar -> State InferSt ()
 specRetAndApplyToArgs currT args specType = do
   newCurrT <- specifyRetType currT specType
   _ <- mapM (addFunc newCurrT) args
   return ()
 
-getNextValidVal :: TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int, StrMap.Map Int FuncDesc) TypeVar
+getNextValidVal :: TypeVar -> State InferSt TypeVar
 getNextValidVal whichT = do
   (currTypes, currArgs, validVals, fTable) <- get
   let (newGenVar,validVals') = case whichT of
@@ -333,11 +342,11 @@ getNextValidVal whichT = do
   return newGenVar
 
 --first a list, then a non-list inner type
-setValidListInnerType :: TypeVar -> TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int, StrMap.Map Int FuncDesc) TypeVar
+setValidListInnerType :: TypeVar -> TypeVar -> State InferSt TypeVar
 setValidListInnerType (ListType lst) t = liftM ListType $ setValidListInnerType lst t
 setValidListInnerType _ t = getNextValidVal t
 
-unifyTypes :: TypeVar -> TypeVar -> State (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int, StrMap.Map Int FuncDesc) ()
+unifyTypes :: TypeVar -> TypeVar -> State InferSt ()
 unifyTypes a b =
   case (a,b) of
     (ListType t1,ListType t2) -> unifyTypes t1 t2 --do { modify $ unify' (ListType t1) (ListType t2); unifyTypes t1 t2; }
@@ -351,7 +360,7 @@ unifyTypes a b =
           let currTypes' = DisjointSet.insert (genTypeIntBijection bet) $ DisjointSet.insert (genTypeIntBijection alph) currTypes
           in (DisjointSet.union (genTypeIntBijection alph) (genTypeIntBijection bet) currTypes', args, v, ft)
           
-validateFunctionTypes :: Expression -> State(DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int, StrMap.Map Int FuncDesc) (StrMap.Map TypeVar TypeVar, FuncDesc)
+validateFunctionTypes :: Expression -> State InferSt (StrMap.Map TypeVar TypeVar, FuncDesc)
 validateFunctionTypes fidArg = do
   let fid = case fidArg of (Node (Right (FuncId a)) []) -> a --has to be compile time constant, just a straight id, no expressions. The same way this doesn't handle 5+[5], this doesn't handle call (2+2), because it has to be a constant FuncId
   (_, _, _, fTable) <- get
@@ -365,3 +374,56 @@ validateFunctionTypes fidArg = do
   newValsArgMapPreRet <- DatFold.foldlM makeValidArgVal' StrMap.empty (argType fDesc)
   newValsArgMap <- makeValidArgVal' newValsArgMapPreRet (retType fDesc)
   return (newValsArgMap, fDesc)
+
+--first arg is ftable
+--insert above the given node, between it and its parent
+--int argument is the number of funcArgs currently used
+--potential OPTIMIZATION?? - store a function description at each node in the expression tree, which describes that subnode - I'm gonna need that data a lot, and having it makes it easier to compute it for a parent
+{-getInsertMutationsAtPoint :: StrMap.Map Int FuncDesc -> Zp.TreePos Zp.Full ExprNode -> Int -> [Expression]
+getInsertMutationsAtPoint ftable loc numArgs =
+  let fDesc = getFuncDescFromNode ftable (Zp.tree . Zp.root $ Zp.setTree (Node (Right $ FuncArg numArgs) []) loc)
+      Just locTypeAbove = StrMap.lookup numArgs $ argType fDesc
+      locDesc = getFuncDescFromNode ftable (Zp.tree loc)
+      locTypeBelow = retType locDesc --locTypeBelow must be at least as specific as locTypeAbove, maybe more. I.e. it's a subset of above, their specificity is comparable.
+    in if Zp.isLeaf loc then
+         getInsertableExprFunc-}
+{-          if isLeaf --if it's a leaf, we just throw out the leaf
+            then let mergedOpDesc = 
+                  in Just $ Node (Left op) []
+            else Just $ Node (Left op) [] --conditionally use arg
+          where mergeDescRet retT t =
+                  getShallowestInnerType retT t
+-}
+
+--function description is the full description of the operator being added, next is that same operator
+--untested for lists
+getInsertableExprFunc :: FuncDesc -> Operator -> TypeVar -> Maybe [Expression]
+getInsertableExprFunc opDesc op locTypeAbove = do --maybe monad
+  spec <- getMoreSpecific (retType opDesc) locTypeAbove--are they compatible. If not, return is Nothing
+  let mergedOpDesc = if spec==(retType opDesc)
+                       then opDesc--no need to change opDesc at all, it's the more specific
+                       else opDesc{retType=spec, argType=StrMap.map (replaceT' (retType opDesc) spec) (argType opDesc)} --need to specify opDesc
+  let flipOpDesc = StrMap.fromListWith (flip const) $ map (\(x,y) -> (getListInnerType y,x)) $ StrMap.toAscList . argType $ mergedOpDesc --gets this useful map, and makes list of elems now be keys - so keys is unique, which is also useful
+  let uniqOpDesc = StrMap.keys flipOpDesc
+  let f' :: [Datum] -> Tree (Either Operator Datum) --currently, gets a list of arguments corresponding with uniqOpDesc - expands this so out to the non-uniques. Mapped over sequenced combinations.
+      f' combs =
+        let mapCombs = StrMap.fromList (zip uniqOpDesc combs)
+        in Node (Left op) $ StrMap.foldr (\arg res ->
+                              (Node (Right . (setListInnerDat arg) . fromJust $ (getListInnerType arg) `StrMap.lookup` mapCombs) []):res)
+                            [] (argType mergedOpDesc)
+  Just $ map f' $ sequence $ map instantiateType uniqOpDesc
+  where replaceT' orig spec t --replace t with spec iff t==orig, i.e. s/orig/spec; t is search term
+          | t==orig   = spec
+          | otherwise = case t of
+                          ListType t1 -> ListType $ replaceT' orig spec t1
+                          t1 -> t1 --no replacement needed
+
+instantiateType :: TypeVar -> [Datum]
+instantiateType (SpecType DatBVar) = [DatB False]
+instantiateType (SpecType DatIVar) = [DatI 0]
+instantiateType (SpecType DatDVar) = [DatD 0.0]
+instantiateType (GenType (NumVar, _)) = instantiateType (SpecType DatIVar) ++ instantiateType (SpecType DatDVar)
+instantiateType (ListType t) = map (\d -> ListDat (datToType d) []) $ instantiateType t
+--supports one layer of list nesting
+instantiateType (GenType (GenVar, _)) = let ts = [(minBound::SpecificType)..toEnum (fromEnum (maxBound::SpecificType)-1)] --ugly crap enum stuff
+                                          in concatMap (instantiateType . SpecType) ts ++ concatMap (instantiateType . ListType . SpecType) ts
