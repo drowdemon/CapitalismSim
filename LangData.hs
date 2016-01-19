@@ -2,6 +2,8 @@ module LangData
        where
 import Data.Tree
 import qualified Data.Map.Strict as Map
+import Data.Maybe
+import Control.Monad
 
 data Operator = Add
               | Subt
@@ -24,7 +26,7 @@ data Operator = Add
               | Ceil
               | Floor
               | ToDouble
-              deriving (Show,Eq)
+              deriving (Show,Eq,Ord,Bounded,Enum)
 
 data Datum = DatB Bool --takes a monad - the list monad or the identity. I think that works
            | DatI Integer
@@ -41,42 +43,52 @@ data GenericType = GenVar       --anything
                           
 data SpecificType = DatBVar --no associated ints
                   | DatIVar
-                  | DatDVar
-                  | FuncIdVar--currently this one has to be lexicographically last, but that might be fixed - see instantiateType in LangProc.hs
+                  | DatDVar --note that since only this type can be made into a list, lists of functions are illegal (the type could be written, but the data can't be. I'm going to regret that.)
+--                  | FuncIdVar--currently this one has to be lexicographically last, but that might be fixed - see instantiateType in LangProc.hs
                   deriving (Show, Enum, Bounded, Ord, Eq)
                            
 data TypeVar = GenType (GenericType, Int) --integer is an id, like type t0, t1
              | SpecType SpecificType
              | ListType TypeVar
+             | ExprType FuncType
              deriving (Show, Ord, Eq)
-
+data FuncType = FuncType
+  { retType :: TypeVar
+  , argType :: Map.Map Int TypeVar
+  } deriving (Show, Eq, Ord)
 data FuncDesc = FuncDesc
   { body    :: Expression
-  , retType :: TypeVar
-  , argType :: Map.Map Int TypeVar
+  , fType   :: FuncType
   }
   deriving (Show,Eq)
   
+--newtype Expression = Expr (Tree (Either OpDesc Datum)) deriving (Show, Eq)
 type Expression = (Tree (Either Operator Datum))
 type ExprNode = Either Operator Datum
+type OpDesc = (Operator, FuncType)
 
+--if the arguments are equivalently specific it will return the Just the first one.
 getMoreSpecific :: TypeVar -> TypeVar -> Maybe TypeVar
+getMoreSpecific (ExprType _) _                               = Nothing --note that this implies that genvars do not generalize to functional types, which is ok - no lists of functions
+getMoreSpecific _ (ExprType _)                               = Nothing
 getMoreSpecific (SpecType t1) (SpecType t2)                  = if t1==t2 then Just $ SpecType t1 else Nothing
---incorrect: if t1 is a datI and _ is a list, should be nothing
-getMoreSpecific (SpecType t1) _                              = Just $ SpecType t1
-getMoreSpecific _ (SpecType t1)                              = Just $ SpecType t1
+getMoreSpecific (SpecType t1) (GenType (GenVar, _))          = Just $ SpecType t1
+getMoreSpecific (SpecType DatIVar) (GenType (NumVar, _))     = Just $ SpecType DatIVar
+getMoreSpecific (SpecType DatDVar) (GenType (NumVar, _))     = Just $ SpecType DatDVar
 getMoreSpecific (GenType (NumVar, t1)) (GenType (NumVar, _)) = Just $ GenType (NumVar, t1)
 getMoreSpecific (ListType t1) (ListType t2)                  = fmap ListType $ getMoreSpecific t1 t2
 getMoreSpecific t1 (GenType (GenVar, _))                     = Just t1
 getMoreSpecific (GenType (GenVar, _)) t1                     = Just t1
 getMoreSpecific (ListType _) (GenType (NumVar, _))           = Nothing
 getMoreSpecific (GenType (NumVar, _)) (ListType _)           = Nothing
+getMoreSpecific (SpecType _) _                               = Nothing
+getMoreSpecific t2 (SpecType t1)                             = getMoreSpecific (SpecType t1) t2
 
 datToType :: Datum -> SpecificType
 datToType (DatB _) = DatBVar
 datToType (DatI _) = DatIVar
 datToType (DatD _) = DatDVar
-datToType (FuncId _) = FuncIdVar
+--datToType (FuncId _) = FuncIdVar
 datToType (ListDat spec _) = spec
 
 genTypeIntBijection :: TypeVar -> Int
@@ -86,10 +98,12 @@ genTypeIntBijection t = bijection' 0 t
             (GenType (genT, genId)) -> bijection'' numList $ (fromEnum (maxBound::GenericType)+1) * genId + (fromEnum genT) + (fromEnum (maxBound::SpecificType)) + 1 --last 2 terms give room for the specific types at the beginning
             (SpecType x) -> bijection'' numList $ fromEnum x --made room in the positives for these
             (ListType t1) -> bijection' (numList+1) t1
+            (ExprType _) -> -1 --simple. 
         bijection'' numList numEnum = ((numList+numEnum)*(numList+numEnum+1) `div` 2) + numEnum
 
 genTypeIntBijectionInv :: Int -> TypeVar
-genTypeIntBijectionInv z =
+genTypeIntBijectionInv (-1) = ExprType undefined 
+genTypeIntBijectionInv z  =
   let w = floor $ ((sqrt $ (fromIntegral $ 8*z + 1)::Double) - 1) / 2
       t = (w*w + w) `div` 2
       numEnum = z - t
@@ -126,3 +140,15 @@ getShallowestInnerType (ListType t1) (ListType t2) = getShallowestInnerType t1 t
 getShallowestInnerType (ListType t1) t2 = (ListType t1, t2, True)
 getShallowestInnerType t1 (ListType t2) = (t1, ListType t2, False)
 getShallowestInnerType t1 t2 = (t1, t2, False) --bool doesn't matter in this case
+
+canSpecifyFTo :: Bool -> FuncType -> FuncType -> Bool
+canSpecifyFTo useArgs f1 f2 =
+  isJust $ do
+    guard $ (Map.size . argType $ f1) /= (Map.size . argType $ f2)
+    let f' (t1,t2) = do
+         temp <- getMoreSpecific t1 t2
+         guard $ temp == t1 --same or f1 is more specific. If it's f2, no good.
+    f' (retType f1,retType f2)
+    if useArgs then
+       mapM f' $ zip (Map.elems $ argType f1) (Map.elems $ argType f2)
+       else Just []

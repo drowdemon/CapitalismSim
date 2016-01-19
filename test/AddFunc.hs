@@ -16,7 +16,7 @@ testExpr1 = Node{rootLabel=Left Dfn, subForest=
                   Node{rootLabel=Right $ FuncArg 1, subForest=[]}]}]}
 addFuncTest1 =
   let (res,_) = execState (evalNode testExpr1) (StrMap.empty, StrMap.empty)
-  in res ~?= (StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}, retType = GenType (NumVar,0), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0))]})])
+  in res ~?= (StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}, fType=FuncType{retType = GenType (NumVar,0), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0))]}})])
 
 testExpr2 :: Expression
 testExpr2 = Node{rootLabel=Left Dfn, subForest=
@@ -27,7 +27,7 @@ testExpr2 = Node{rootLabel=Left Dfn, subForest=
                    Node{rootLabel=Right $ DatI 0, subForest=[]}]}]}]}
 addFuncTest2 =
   let (res,_) = execState (evalNode testExpr2) (StrMap.empty, StrMap.empty)
-  in res ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Left Subt, subForest = [Node {rootLabel = Right (FuncArg 1), subForest = []},Node {rootLabel = Right (DatI 0), subForest = []}]}]}, retType = SpecType DatIVar, argType = StrMap.fromList [(0,SpecType DatIVar),(1,SpecType DatIVar)]})]
+  in res ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Left Subt, subForest = [Node {rootLabel = Right (FuncArg 1), subForest = []},Node {rootLabel = Right (DatI 0), subForest = []}]}]}, fType=FuncType{retType = SpecType DatIVar, argType = StrMap.fromList [(0,SpecType DatIVar),(1,SpecType DatIVar)]}})]
 
 testExpr3 :: Expression
 testExpr3 = Node{rootLabel=Left Dfn, subForest=
@@ -43,7 +43,7 @@ testExpr3 = Node{rootLabel=Left Dfn, subForest=
                    Node{rootLabel=Right $ FuncArg 3, subForest=[]}]}]}]}
 addFuncTest3 =
   let (res, _) = execState (evalNode testExpr3) (StrMap.empty, StrMap.empty)
-  in res ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left If, subForest = [Node {rootLabel = Left Gt, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]},Node {rootLabel = Left Mul, subForest = [Node {rootLabel = Right (FuncArg 2), subForest = []},Node {rootLabel = Right (FuncArg 3), subForest = []}]},Node {rootLabel = Left Div, subForest = [Node {rootLabel = Right (FuncArg 3), subForest = []},Node {rootLabel = Right (FuncArg 3), subForest = []}]}]}, retType = GenType (NumVar,1), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0)),(2,GenType (NumVar,1)),(3,GenType (NumVar,1))]})]
+  in res ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left If, subForest = [Node {rootLabel = Left Gt, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]},Node {rootLabel = Left Mul, subForest = [Node {rootLabel = Right (FuncArg 2), subForest = []},Node {rootLabel = Right (FuncArg 3), subForest = []}]},Node {rootLabel = Left Div, subForest = [Node {rootLabel = Right (FuncArg 3), subForest = []},Node {rootLabel = Right (FuncArg 3), subForest = []}]}]}, fType=FuncType{retType = GenType (NumVar,1), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0)),(2,GenType (NumVar,1)),(3,GenType (NumVar,1))]}})]
      
 testExpr4 :: Expression
 testExpr4 = Node{rootLabel=Left Dfn, subForest=[
@@ -53,7 +53,7 @@ testExpr4 = Node{rootLabel=Left Dfn, subForest=[
                 Node{rootLabel=Right $ FuncArg 1, subForest=[]}]}]}]}
 addFuncTest4 =
   let (res, _) = execState (evalNode testExpr4) (StrMap.empty, StrMap.empty)
-  in res ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left MkList, subForest = [Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}]}, retType = ListType (GenType (NumVar,0)), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0))]})]
+  in res ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left MkList, subForest = [Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}]}, fType=FuncType{retType = ListType (GenType (NumVar,0)), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0))]}})]
 
 testExpr5 :: Expression
 testExpr5 = Node{rootLabel=Left Dfn, subForest=[
@@ -68,7 +68,7 @@ testExpr5 = Node{rootLabel=Left Dfn, subForest=[
                    Node{rootLabel=Right $ FuncArg 3, subForest=[]}]}]}]}
 addFuncTest5 =
   let (res, _) = execState (evalNode testExpr5) (StrMap.empty, StrMap.empty)
-  in res ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left AppLists, subForest = [Node {rootLabel = Left ConsList, subForest = [Node {rootLabel = Right (FuncArg 2), subForest = []},Node {rootLabel = Left MkList, subForest = [Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}]}]},Node {rootLabel = Left MkList, subForest = [Node {rootLabel = Right (FuncArg 3), subForest = []}]}]}, retType = ListType (GenType (NumVar,0)), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0)),(2,GenType (NumVar,0)),(3,GenType (NumVar,0))]})]
+  in res ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left AppLists, subForest = [Node {rootLabel = Left ConsList, subForest = [Node {rootLabel = Right (FuncArg 2), subForest = []},Node {rootLabel = Left MkList, subForest = [Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}]}]},Node {rootLabel = Left MkList, subForest = [Node {rootLabel = Right (FuncArg 3), subForest = []}]}]}, fType=FuncType{retType = ListType (GenType (NumVar,0)), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0)),(2,GenType (NumVar,0)),(3,GenType (NumVar,0))]}})]
 
 testExpr6 :: Expression
 testExpr6 = Node{rootLabel=Left Dfn, subForest=[
@@ -81,7 +81,7 @@ testExpr6 = Node{rootLabel=Left Dfn, subForest=[
 addFuncTest6 =
   let (funcDesc1, _) = execState (evalNode testExpr1) (StrMap.empty, StrMap.empty)
       (funcDesc2, _) = execState (evalNode testExpr6) (funcDesc1, StrMap.empty)
-  in funcDesc2 ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}, retType = GenType (NumVar,0), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0))]}),(1,FuncDesc {body = Node {rootLabel = Left Call, subForest = [Node {rootLabel = Right (FuncId 0), subForest = []},Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 1), subForest = []},Node {rootLabel = Right (FuncArg 2), subForest = []}]},Node {rootLabel = Right (FuncArg 0), subForest = []}]}, retType = GenType (NumVar,0), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0)),(2,GenType (NumVar,0))]})]
+  in funcDesc2 ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}, fType=FuncType{retType = GenType (NumVar,0), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0))]}}),(1,FuncDesc {body = Node {rootLabel = Left Call, subForest = [Node {rootLabel = Right (FuncId 0), subForest = []},Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 1), subForest = []},Node {rootLabel = Right (FuncArg 2), subForest = []}]},Node {rootLabel = Right (FuncArg 0), subForest = []}]}, fType=FuncType{retType = GenType (NumVar,0), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0)),(2,GenType (NumVar,0))]}})]
 
 testExpr7 :: Expression
 testExpr7 = Node{rootLabel=Left Dfn, subForest=[
@@ -94,7 +94,7 @@ testExpr7 = Node{rootLabel=Left Dfn, subForest=[
 addFuncTest7 =
   let (funcDesc1, _) = execState (evalNode testExpr4) (StrMap.empty, StrMap.empty)
       (funcDesc2, _) = execState (evalNode testExpr7) (funcDesc1, StrMap.empty)
-  in funcDesc2 ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left MkList, subForest = [Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}]}, retType = ListType (GenType (NumVar,0)), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0))]}),(1,FuncDesc {body = Node {rootLabel = Left ConsList, subForest = [Node {rootLabel = Right (FuncArg 1), subForest = []},Node {rootLabel = Left Call, subForest = [Node {rootLabel = Right (FuncId 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 2), subForest = []}]}]}, retType = ListType (GenType (NumVar,0)), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0)),(2,GenType (NumVar,0))]})]
+  in funcDesc2 ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left MkList, subForest = [Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}]}, fType=FuncType{retType = ListType (GenType (NumVar,0)), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0))]}}),(1,FuncDesc {body = Node {rootLabel = Left ConsList, subForest = [Node {rootLabel = Right (FuncArg 1), subForest = []},Node {rootLabel = Left Call, subForest = [Node {rootLabel = Right (FuncId 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 2), subForest = []}]}]}, fType=FuncType{retType = ListType (GenType (NumVar,0)), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0)),(2,GenType (NumVar,0))]}})]
 
 testExpr8 :: Expression
 testExpr8 = Node{rootLabel=Left Dfn, subForest=[
@@ -103,7 +103,7 @@ testExpr8 = Node{rootLabel=Left Dfn, subForest=[
               Node{rootLabel=Right $ FuncArg 0, subForest=[]}]}]}
 addFuncTest8 =
   let (funcDesc, _) = execState (evalNode testExpr8) (StrMap.empty, StrMap.empty)
-  in funcDesc ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left AppLists, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []}]}, retType = ListType (GenType (GenVar,1)), argType = StrMap.fromList [(0,ListType (GenType (GenVar,1)))]})]
+  in funcDesc ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left AppLists, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []}]}, fType=FuncType{retType = ListType (GenType (GenVar,1)), argType = StrMap.fromList [(0,ListType (GenType (GenVar,1)))]}})]
 
 testExpr9 :: Expression
 testExpr9 = Node{rootLabel=Left Dfn, subForest=[
@@ -117,7 +117,7 @@ testExpr9 = Node{rootLabel=Left Dfn, subForest=[
 addFuncTest9 =
   let (funcDesc1, _) = execState (evalNode testExpr8) (StrMap.empty, StrMap.empty)
       (funcDesc2, _) = execState (evalNode testExpr9) (funcDesc1, StrMap.empty)
-  in funcDesc2 ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left AppLists, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []}]}, retType = ListType (GenType (GenVar,1)), argType = StrMap.fromList [(0,ListType (GenType (GenVar,1)))]}),(1,FuncDesc {body = Node {rootLabel = Left ConsList, subForest = [Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]},Node {rootLabel = Left Call, subForest = [Node {rootLabel = Right (FuncId 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []}]}]}, retType = ListType (GenType (NumVar,0)), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0))]})]
+  in funcDesc2 ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left AppLists, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []}]}, fType=FuncType{retType = ListType (GenType (GenVar,1)), argType = StrMap.fromList [(0,ListType (GenType (GenVar,1)))]}}),(1,FuncDesc {body = Node {rootLabel = Left ConsList, subForest = [Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]},Node {rootLabel = Left Call, subForest = [Node {rootLabel = Right (FuncId 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []}]}]}, fType=FuncType{retType = ListType (GenType (NumVar,0)), argType = StrMap.fromList [(0,GenType (NumVar,0)),(1,GenType (NumVar,0))]}})]
 
 testExpr10 :: Expression
 testExpr10 = Node{rootLabel=Left Dfn, subForest=[
@@ -132,7 +132,7 @@ addFuncTest10 =
                  Node{rootLabel=Right $ FuncArg 0, subForest=[]}]}]}]}
       (funcDesc1, _) = execState (evalNode expr0) (StrMap.empty, StrMap.empty)
       (funcDesc2, _) = execState (evalNode testExpr10) (funcDesc1, StrMap.empty)
-  in funcDesc2 ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left MkList, subForest = [Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []}]}]}, retType = ListType (GenType (NumVar,0)), argType = StrMap.fromList [(0,GenType (NumVar,0))]}),(1,FuncDesc {body = Node {rootLabel = Left Map, subForest = [Node {rootLabel = Right (FuncId 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []}]}, retType = ListType (ListType (GenType (NumVar,0))), argType = StrMap.fromList [(0,ListType (GenType (NumVar,0)))]})]
+  in funcDesc2 ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left MkList, subForest = [Node {rootLabel = Left Add, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []}]}]}, fType=FuncType{retType = ListType (GenType (NumVar,0)), argType = StrMap.fromList [(0,GenType (NumVar,0))]}}),(1,FuncDesc {body = Node {rootLabel = Left Map, subForest = [Node {rootLabel = Right (FuncId 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []}]}, fType=FuncType{retType = ListType (ListType (GenType (NumVar,0))), argType = StrMap.fromList [(0,ListType (GenType (NumVar,0)))]}})]
 
 testExpr11 :: Expression
 testExpr11 = Node{rootLabel=Left Dfn, subForest=[
@@ -147,7 +147,7 @@ addFuncTest11 =
                 Node{rootLabel=Right $ FuncArg 1, subForest=[]}]}]}
       (funcDesc1, _) = execState (evalNode expr0) (StrMap.empty, StrMap.empty)
       (funcDesc2, _) = execState (evalNode testExpr11) (funcDesc1, StrMap.empty)
-  in funcDesc2 ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left ConsList, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}, retType = ListType (GenType (GenVar,1)), argType = StrMap.fromList [(0,GenType (GenVar,1)),(1,ListType (GenType (GenVar,1)))]}),(1,FuncDesc {body = Node {rootLabel = Left Fold, subForest = [Node {rootLabel = Right (FuncId 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}, retType = ListType (GenType (GenVar,1)), argType = StrMap.fromList [(0,ListType (GenType (GenVar,1))),(1,ListType (GenType (GenVar,1)))]})]
+  in funcDesc2 ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left ConsList, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}, fType=FuncType{retType = ListType (GenType (GenVar,1)), argType = StrMap.fromList [(0,GenType (GenVar,1)),(1,ListType (GenType (GenVar,1)))]}}),(1,FuncDesc {body = Node {rootLabel = Left Fold, subForest = [Node {rootLabel = Right (FuncId 0), subForest = []},Node {rootLabel = Right (FuncArg 0), subForest = []},Node {rootLabel = Right (FuncArg 1), subForest = []}]}, fType=FuncType{retType = ListType (GenType (GenVar,1)), argType = StrMap.fromList [(0,ListType (GenType (GenVar,1))),(1,ListType (GenType (GenVar,1)))]}})]
 
 testExpr12 :: Expression
 testExpr12 = Node{rootLabel=Left Dfn, subForest=[
@@ -161,7 +161,7 @@ testExpr12 = Node{rootLabel=Left Dfn, subForest=[
                 Node{rootLabel=Right $ FuncArg 1, subForest=[]}]}]}]}
 addFuncTest12 =
   let (res, _) = execState (evalNode testExpr12) (StrMap.empty, StrMap.empty)
-  in "floor/ceil functions: " ~: res ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left Mul, subForest = [Node {rootLabel = Left Floor, subForest = [Node {rootLabel = Left Add, subForest = [Node {rootLabel = Left ToDouble, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []}]},Node {rootLabel = Right (DatD 5.2), subForest = []}]}]},Node {rootLabel = Left Ceil, subForest = [Node {rootLabel = Right (FuncArg 1), subForest = []}]}]}, retType = SpecType DatIVar, argType = StrMap.fromList [(0,GenType (NumVar,3)),(1,GenType (NumVar,4))]})]
+  in "floor/ceil functions: " ~: res ~?= StrMap.fromList [(0,FuncDesc {body = Node {rootLabel = Left Mul, subForest = [Node {rootLabel = Left Floor, subForest = [Node {rootLabel = Left Add, subForest = [Node {rootLabel = Left ToDouble, subForest = [Node {rootLabel = Right (FuncArg 0), subForest = []}]},Node {rootLabel = Right (DatD 5.2), subForest = []}]}]},Node {rootLabel = Left Ceil, subForest = [Node {rootLabel = Right (FuncArg 1), subForest = []}]}]}, fType=FuncType{retType = SpecType DatIVar, argType = StrMap.fromList [(0,GenType (NumVar,3)),(1,GenType (NumVar,4))]}})]
 
 addFuncTests =  TestList [addFuncTest1,
                           addFuncTest2,

@@ -1,6 +1,7 @@
 module LangProc
        where
 import LangData
+import OperatorDescriptions
 
 import Data.Tree
 import qualified Data.Map.Strict as StrMap
@@ -11,8 +12,9 @@ import qualified Data.Sequence as Sq
 import qualified Data.Foldable as DatFold
 import qualified Data.Tree.Zipper as Zp
 import Data.Maybe
---import Control.Applicative
---import qualified Data.List.Extra as LsEx
+import Control.Monad.Reader
+import qualified Data.List.Extra as LsEx
+import Control.Applicative
 --import Control.Monad.Random
 --import qualified Debug.Trace as Tr
 
@@ -29,6 +31,7 @@ evalNode (Node (Left Add) (arg1:arg2:[])) = do
   case (a1,a2) of
     (DatD a, DatD b) -> return $ DatD (a+b)
     (DatI a, DatI b) -> return $ DatI (a+b)
+--    _ -> error $ "Invalid args to Add "++(show a1)++" "++(show a2)
 
 evalNode (Node (Left Subt) (arg1:arg2:[])) = do
   a1 <- evalNode arg1
@@ -36,6 +39,7 @@ evalNode (Node (Left Subt) (arg1:arg2:[])) = do
   case (a1,a2) of
     (DatD a, DatD b) -> return $ DatD (a-b)
     (DatI a, DatI b) -> return $ DatI (a-b)
+--    _ -> error $ "Invalid args to Subt "++(show a1)++" "++(show a2)
 
 evalNode (Node (Left Div) (arg1:arg2:[])) = do
   a1 <- evalNode arg1
@@ -43,6 +47,7 @@ evalNode (Node (Left Div) (arg1:arg2:[])) = do
   case (a1,a2) of
     (DatD a, DatD b) -> return $ DatD (a/b)
     (DatI a, DatI b) -> return $ DatI (a `div` b)
+--    _ -> error $ "Invalid args to Div "++(show a1)++" "++(show a2)
 
 evalNode (Node (Left Mul) (arg1:arg2:[])) = do
   a1 <- evalNode arg1
@@ -50,6 +55,7 @@ evalNode (Node (Left Mul) (arg1:arg2:[])) = do
   case (a1,a2) of
     (DatD a, DatD b) -> return $ DatD (a*b)
     (DatI a, DatI b) -> return $ DatI (a*b)
+--    _ -> error $ "Invalid args to Mul "++(show a1)++" "++(show a2)
 
 evalNode (Node (Left Lt) (arg1:arg2:[])) = do
   a1 <- evalNode arg1
@@ -57,6 +63,7 @@ evalNode (Node (Left Lt) (arg1:arg2:[])) = do
   case (a1,a2) of
     (DatD a, DatD b) -> return $ DatB (a<b)
     (DatI a, DatI b) -> return $ DatB (a<b)
+--    _ -> error $ "Invalid args to Lt "++(show a1)++" "++(show a2)
 
 evalNode (Node (Left Gt) (arg1:arg2:[])) = do
   a1 <- evalNode arg1
@@ -64,6 +71,7 @@ evalNode (Node (Left Gt) (arg1:arg2:[])) = do
   case (a1,a2) of
     (DatD a, DatD b) -> return $ DatB (a>b)
     (DatI a, DatI b) -> return $ DatB (a>b)
+--    _ -> error $ "Invalid args to Gt "++(show a1)++" "++(show a2)
 
 evalNode (Node (Left Eq) (arg1:arg2:[])) = do
   a1 <- evalNode arg1
@@ -93,7 +101,7 @@ evalNode (Node (Left If) (arg1:arg2:arg3:[])) = do
 evalNode (Node (Left Dfn) (arg1:[])) = do
   (fTable,_) <- get
   let retFunc = getFuncDescFromNode fTable arg1
-  addFunc' retFunc 
+  addFunc' FuncDesc{body=arg1, fType=retFunc}
   return $ DatB True --TODO? Anonymous functions would require changing this.
   where addFunc' :: FuncDesc -> State (StrMap.Map Int FuncDesc, StrMap.Map Int Datum) ()
         addFunc' addF = modify f'
@@ -108,9 +116,15 @@ evalNode (Node (Left Call) (fIDarg:args)) = do
   return $ evalState (evalNode $ body f) (fTable, argsMap)
 
 evalNode (Node (Left Map) (fIDarg:lstArg:[])) = do
-  ListDat _ lst <- evalNode lstArg
+  ListDat argT lst <- evalNode lstArg
   retLst <- mapM (\a -> evalNode (Node{rootLabel=Left Call, subForest=[fIDarg,Node{rootLabel=Right a, subForest=[]}]})) lst
   --TODO: ERROR ON EMPTY LIST
+  --need to specify the function using the argType, and then get the retType and use it
+{-  (fTable,_) <- get
+  FuncId fid <- evalNode fIDarg
+  let f = fromJust $ fid `StrMap.lookup` fTable
+      Just spec = getMoreSpecific (fromJust . StrMap.lookup 0 . argType . fType $ f) $ SpecType argT
+-}
   return $ ListDat (datToType . head $ retLst) retLst
 
 evalNode (Node (Left Fold) (fIDarg:startArg:lstArg:[])) = do
@@ -137,13 +151,15 @@ evalNode (Node (Left ConsList) (arg1:arg2:[])) = do
        (DatB a, ListDat DatBVar b)     -> ListDat DatBVar $ (DatB a):b
        (DatI a, ListDat DatIVar b)     -> ListDat DatIVar $ (DatI a):b
        (DatD a, ListDat DatDVar b)     -> ListDat DatDVar $ (DatD a):b
-       (FuncId a, ListDat FuncIdVar b) -> ListDat DatDVar $ (FuncId a):b
+--       _ -> error $ "Invalid args to ConsList "++(show a1)++" "++(show a2)
+--       (FuncId a, ListDat FuncIdVar b) -> ListDat DatDVar $ (FuncId a):b
 
 evalNode (Node (Left AppLists) (arg1:arg2:[])) = do
   a1 <- evalNode arg1
   a2 <- evalNode arg2
   return $ case (a1,a2) of
        (ListDat t1 a, ListDat t2 b) -> ListDat t1 $ f t1 t2 a b --a++b
+--       _ -> error $ "Invalid args to AppLists "++(show a1)++" "++(show a2)
   where f t1 t2 a b | t1==t2 = a++b --can't resist *a bit* of typechecking
 
 evalNode (Node (Left Ceil) (arg1:[])) = do
@@ -168,7 +184,7 @@ evalNode (Node (Left ToDouble) (arg1:[])) = do
 type InferSt = (DisjointSet.IntDisjointSet, StrMap.Map Int TypeVar, Sq.Seq Int, StrMap.Map Int FuncDesc)
 
 --runs addFunc
-getFuncDescFromNode :: StrMap.Map Int FuncDesc -> Expression -> FuncDesc
+getFuncDescFromNode :: StrMap.Map Int FuncDesc -> Expression -> FuncType
 getFuncDescFromNode fTable expr = do
   let typesInit = (genTypeIntBijection (GenType (GenVar, 0))):[genTypeIntBijection $ SpecType (minBound::SpecificType)..genTypeIntBijection $ SpecType (maxBound::SpecificType)]
       (currTypes,currArgs,_,_) = execState (addFunc (GenType (GenVar, 0)) expr) --note that fTable ret is ignored
@@ -180,7 +196,7 @@ getFuncDescFromNode fTable expr = do
         --Tr.trace ((show currTypes)++" args "++(show currArgs)) $ getSpecificest currTypes
       specArgs = StrMap.map (findSpecificType' currTypes' specTypes) currArgs
       specRet  = findSpecificType' currTypes' specTypes (GenType (GenVar, 0))
-   in FuncDesc{body=expr, retType=specRet, argType=specArgs} --retrieve ret/arg types from currTypes
+   in FuncType{retType=specRet, argType=specArgs} --retrieve ret/arg types from currTypes
   where getSpecificest :: DisjointSet.IntDisjointSet -> (StrMap.Map TypeVar TypeVar, DisjointSet.IntDisjointSet)
         getSpecificest currTypes =
           let (currTypesLst, currTypes') = DisjointSet.toList currTypes
@@ -234,7 +250,7 @@ addFunc currT (Node (Left Gt) (arg1:arg2:[]))   = do
   newGenVar <- getNextValidVal $ GenType (NumVar, 0)
   addFunc newGenVar arg1
   addFunc newGenVar arg2
-addFunc currT (Node (Left Eq) (arg1:arg2:[]))   = do ----do {addFunc currT arg1; addFunc currT arg2; }
+addFunc currT (Node (Left Eq) (arg1:arg2:[]))   = do --do {addFunc currT arg1; addFunc currT arg2; }
   _ <- specifyRetType currT (SpecType DatBVar)
   newGenVar <- getNextValidVal $ GenType (GenVar, 0)
   addFunc newGenVar arg1
@@ -249,7 +265,7 @@ addFunc currT (Node (Left If) (arg1:arg2:arg3:[])) = do
 
 addFunc currT (Node (Left Call) (fidArg:args)) = do
   (newValsArgMap,fDesc) <- validateFunctionTypes fidArg
-  let Just newRetInnerType = (getListInnerType $ retType fDesc) `StrMap.lookup` newValsArgMap
+  let Just newRetInnerType = (getListInnerType . retType $ fDesc) `StrMap.lookup` newValsArgMap
   unifyTypes currT $ setActListInnerType (retType fDesc) newRetInnerType --need this, not specifyRetType. That treats second arg as template, gets a valid val for it. We already did that.
   let addWithNewArg' (ind, arg) =
         let Just ret =
@@ -360,11 +376,12 @@ unifyTypes a b =
           let currTypes' = DisjointSet.insert (genTypeIntBijection bet) $ DisjointSet.insert (genTypeIntBijection alph) currTypes
           in (DisjointSet.union (genTypeIntBijection alph) (genTypeIntBijection bet) currTypes', args, v, ft)
           
-validateFunctionTypes :: Expression -> State InferSt (StrMap.Map TypeVar TypeVar, FuncDesc)
+validateFunctionTypes :: Expression -> State InferSt (StrMap.Map TypeVar TypeVar, FuncType)
 validateFunctionTypes fidArg = do
   let fid = case fidArg of (Node (Right (FuncId a)) []) -> a --has to be compile time constant, just a straight id, no expressions. The same way this doesn't handle 5+[5], this doesn't handle call (2+2), because it has to be a constant FuncId
   (_, _, _, fTable) <- get
-  let Just fDesc = fid `StrMap.lookup` fTable
+  let Just funcDesc = fid `StrMap.lookup` fTable
+  let fDesc = fType funcDesc
   let makeValidArgVal' accumMap oldArgT =
         case getListInnerType oldArgT `StrMap.lookup` accumMap of
           Just _ -> return accumMap
@@ -379,51 +396,68 @@ validateFunctionTypes fidArg = do
 --insert above the given node, between it and its parent
 --int argument is the number of funcArgs currently used
 --potential OPTIMIZATION?? - store a function description at each node in the expression tree, which describes that subnode - I'm gonna need that data a lot, and having it makes it easier to compute it for a parent
-{-getInsertMutationsAtPoint :: StrMap.Map Int FuncDesc -> Zp.TreePos Zp.Full ExprNode -> Int -> [Expression]
-getInsertMutationsAtPoint ftable loc numArgs =
-  let fDesc = getFuncDescFromNode ftable (Zp.tree . Zp.root $ Zp.setTree (Node (Right $ FuncArg numArgs) []) loc)
+getInsertMutationsAtPoint :: Zp.TreePos Zp.Full ExprNode -> Int -> Reader (StrMap.Map Int FuncDesc) [Expression]
+getInsertMutationsAtPoint loc numArgs = do --reader monad
+  fTable <- ask
+  let fDesc = getFuncDescFromNode fTable (Zp.tree . Zp.root $ Zp.setTree (Node (Right $ FuncArg numArgs) []) loc)
       Just locTypeAbove = StrMap.lookup numArgs $ argType fDesc
-      locDesc = getFuncDescFromNode ftable (Zp.tree loc)
+      locDesc = getFuncDescFromNode fTable (Zp.tree loc)
       locTypeBelow = retType locDesc --locTypeBelow must be at least as specific as locTypeAbove, maybe more. I.e. it's a subset of above, their specificity is comparable.
-    in if Zp.isLeaf loc then
-         getInsertableExprFunc-}
-{-          if isLeaf --if it's a leaf, we just throw out the leaf
-            then let mergedOpDesc = 
-                  in Just $ Node (Left op) []
-            else Just $ Node (Left op) [] --conditionally use arg
-          where mergeDescRet retT t =
-                  getShallowestInnerType retT t
--}
+      allOps = [(minBound::Operator)..(maxBound::Operator)]
+  if Zp.isLeaf loc then
+    do (liftA2 (++)) (concat <$> catMaybes <$> mapM (\op -> getInsertableExprFunc locTypeAbove (fromJust $ StrMap.lookup op opMap) (Left op)) allOps)
+         (concat <$> catMaybes <$> mapM (\(i,f) -> getInsertableExprFunc locTypeAbove (fType f) (Right $ FuncId i)) (StrMap.toAscList fTable))
+  else concat <$> catMaybes <$> mapM (\op -> getInsertableExprFunc locTypeAbove (fromJust $ StrMap.lookup op opMap) (Left op)) allOps --TODO - do stuff with existing branch
 
---function description is the full description of the operator being added, next is that same operator
---untested for lists
-getInsertableExprFunc :: FuncDesc -> Operator -> TypeVar -> Maybe [Expression]
-getInsertableExprFunc opDesc op locTypeAbove = do --maybe monad
-  spec <- getMoreSpecific (retType opDesc) locTypeAbove--are they compatible. If not, return is Nothing
-  let mergedOpDesc = if spec==(retType opDesc)
-                       then opDesc--no need to change opDesc at all, it's the more specific
-                       else opDesc{retType=spec, argType=StrMap.map (replaceT' (retType opDesc) spec) (argType opDesc)} --need to specify opDesc
-  let flipOpDesc = StrMap.fromListWith (flip const) $ map (\(x,y) -> (getListInnerType y,x)) $ StrMap.toAscList . argType $ mergedOpDesc --gets this useful map, and makes list of elems now be keys - so keys is unique, which is also useful
-  let uniqOpDesc = StrMap.keys flipOpDesc
-  let f' :: [Datum] -> Tree (Either Operator Datum) --currently, gets a list of arguments corresponding with uniqOpDesc - expands this so out to the non-uniques. Mapped over sequenced combinations.
-      f' combs =
-        let mapCombs = StrMap.fromList (zip uniqOpDesc combs)
-        in Node (Left op) $ StrMap.foldr (\arg res ->
-                              (Node (Right . (setListInnerDat arg) . fromJust $ (getListInnerType arg) `StrMap.lookup` mapCombs) []):res)
-                            [] (argType mergedOpDesc)
-  Just $ map f' $ sequence $ map instantiateType uniqOpDesc
-  where replaceT' orig spec t --replace t with spec iff t==orig, i.e. s/orig/spec; t is search term
-          | t==orig   = spec
-          | otherwise = case t of
-                          ListType t1 -> ListType $ replaceT' orig spec t1
-                          t1 -> t1 --no replacement needed
+--function type is of the thing being added, next is that same operator/function
+--TODO untested for lists
+--Datum is specifically a FuncId
+getInsertableExprFunc :: TypeVar -> FuncType -> Either Operator Datum -> Reader (StrMap.Map Int FuncDesc) (Maybe [Expression])
+getInsertableExprFunc _ _ (Left Dfn) = return Nothing
+getInsertableExprFunc _ _ (Left Call) = return Nothing
+getInsertableExprFunc locTypeAbove opDesc op = do --reader monad
+  case getMoreSpecific (retType opDesc) locTypeAbove of --are they compatible. If not, return is Nothing
+    Nothing -> return Nothing
+    Just spec -> do --reader monad
+      let mergedOpDesc = if spec==(retType opDesc) --On second thought, I think this might work after all. TODO this is broken, this replaceT' - there's some internal logic to the way changing one type influences the others, specified in the disjoint union generated for this function. This naive replacement doesn't do enough. It works for addition, but not in general.
+                           then opDesc--no need to change opDesc at all, it's the more specific
+                           else opDesc{retType=spec, argType=StrMap.map (replaceT' (retType opDesc) spec) (argType opDesc)} --need to specify opDesc
+          uniqOpDesc = LsEx.nubOrd . map getListInnerType . StrMap.elems . argType $ mergedOpDesc --gets unique list of types in arguments to function
+          f' :: [Datum] -> Tree (Either Operator Datum) --gets a list of arguments corresponding with uniqOpDesc - expands this so out to the non-uniques. Mapped over sequenced combinations.
+          f' combs =
+            let mapCombs = StrMap.fromList (zip uniqOpDesc combs)
+                argList = StrMap.foldr (\arg res ->
+                                   (Node (Right . (setListInnerDat arg) . fromJust $ (getListInnerType arg) `StrMap.lookup` mapCombs) []):res)
+                                 [] (argType mergedOpDesc)
+            in case op of
+              Left operator            -> Node (Left operator) argList
+              Right (FuncId fid) -> Node (Left Call) $ (Node (Right $ FuncId fid) []):argList
+      xs <- mapM instantiateType uniqOpDesc
+      return $ Just $ map f' $ sequence $ xs
+      where replaceT' orig spec t --replace t with spec iff t==orig, i.e. s/orig/spec; t is search term
+              | t==orig   = spec
+              | otherwise = case t of
+                              ListType t1 -> ListType $ replaceT' orig spec t1
+                              t1 -> t1 --no replacement needed
 
-instantiateType :: TypeVar -> [Datum]
-instantiateType (SpecType DatBVar) = [DatB False]
-instantiateType (SpecType DatIVar) = [DatI 0]
-instantiateType (SpecType DatDVar) = [DatD 0.0]
-instantiateType (GenType (NumVar, _)) = instantiateType (SpecType DatIVar) ++ instantiateType (SpecType DatDVar)
-instantiateType (ListType t) = map (\d -> ListDat (datToType d) []) $ instantiateType t
---supports one layer of list nesting
-instantiateType (GenType (GenVar, _)) = let ts = [(minBound::SpecificType)..toEnum (fromEnum (maxBound::SpecificType)-1)] --ugly crap enum stuff
-                                          in concatMap (instantiateType . SpecType) ts ++ concatMap (instantiateType . ListType . SpecType) ts
+instantiateType :: TypeVar -> Reader (StrMap.Map Int FuncDesc) [Datum]
+instantiateType (SpecType DatBVar) = return [DatB False]
+instantiateType (SpecType DatIVar) = return [DatI 0]
+instantiateType (SpecType DatDVar) = return [DatD 0.0]
+instantiateType (GenType (NumVar, _)) = do
+  x <- instantiateType (SpecType DatIVar)
+  y <- instantiateType (SpecType DatDVar)
+  return $ x++y
+instantiateType (ListType t) = do
+  xs <- instantiateType t
+  return $ map (\d -> ListDat (datToType d) []) xs
+--GenVar supports creation of one layer of list nesting
+instantiateType (GenType (GenVar, _)) =
+  let ts = [(minBound::SpecificType)..(maxBound::SpecificType)]
+  in liftA2 (++) (concat <$> mapM (instantiateType . SpecType) ts) (concat <$> mapM (instantiateType . ListType . SpecType) ts)
+instantiateType (ExprType ftype) = do
+  ftable <- ask
+  let validFuncs = filter (canSpecifyFTo True ftype . fType . snd) $ StrMap.toAscList ftable
+  if null validFuncs then
+    return [] --TODO put actual code here, generate a basic function with given type - likely just constant function......... and it's time to make reader be state. Except it's only potential addition, it might not be added......
+    else return $ map (FuncId . fst) validFuncs
