@@ -1,5 +1,6 @@
 module LangData
        where
+import Util
 import Data.Tree
 import qualified Data.Map.Strict as Map
 import Data.Maybe
@@ -46,10 +47,14 @@ data SpecificType = DatBVar --no associated ints
                   | DatDVar --note that since only this type can be made into a list, lists of functions are illegal (the type could be written, but the data can't be. I'm going to regret that.)
 --                  | FuncIdVar--currently this one has to be lexicographically last, but that might be fixed - see instantiateType in LangProc.hs
                   deriving (Show, Enum, Bounded, Ord, Eq)
-                           
+
+--data ContainerType = ListT TypeVar
+               --  | Tree or Maybe or whatever
+
 data TypeVar = GenType (GenericType, Int) --integer is an id, like type t0, t1
              | SpecType SpecificType
              | ListType TypeVar
+          -- | ContType ListT  --replace listT
              | ExprType FuncType
              deriving (Show, Ord, Eq)
 data FuncType = FuncType
@@ -66,6 +71,16 @@ data FuncDesc = FuncDesc
 type Expression = (Tree (Either Operator Datum))
 type ExprNode = Either Operator Datum
 type OpDesc = (Operator, FuncType)
+
+{-class SpecificT a where
+  convToDat :: a -> Datum
+
+instance SpecificT SpecificType where
+ convToDat DatBVar = (DatB False)
+ convToDat DatIVar = (DatI 0)
+ convToDat DatDVar = (DatD 0.0)
+instance (SpecificT a) => SpecificT (ListType a) where-}
+  
 
 --if the arguments are equivalently specific it will return the Just the first one.
 getMoreSpecific :: TypeVar -> TypeVar -> Maybe TypeVar
@@ -90,6 +105,7 @@ datToType (DatI _) = DatIVar
 datToType (DatD _) = DatDVar
 --datToType (FuncId _) = FuncIdVar
 datToType (ListDat spec _) = spec
+--datToType d = error $ show d
 
 genTypeIntBijection :: TypeVar -> Int
 genTypeIntBijection t = bijection' 0 t
@@ -120,7 +136,7 @@ genTypeIntBijectionInv z  =
 
 setListInnerDat :: TypeVar -> Datum -> Datum
 setListInnerDat (ListType t) d@(ListDat s _) = setListInnerDat t $ ListDat s [d]
-setListInnerDat (ListType t) d = setListInnerDat t $ ListDat (datToType d) [d]
+setListInnerDat (ListType t) d = setListInnerDat t $ ListDat (datToType d) [d] --error here with funcarg
 setListInnerDat _ d = d
 
 getListInnerType :: TypeVar -> TypeVar
@@ -141,14 +157,31 @@ getShallowestInnerType (ListType t1) t2 = (ListType t1, t2, True)
 getShallowestInnerType t1 (ListType t2) = (t1, ListType t2, False)
 getShallowestInnerType t1 t2 = (t1, t2, False) --bool doesn't matter in this case
 
-canSpecifyFTo :: Bool -> FuncType -> FuncType -> Bool
-canSpecifyFTo useArgs f1 f2 =
+replaceT :: TypeVar -> TypeVar -> TypeVar -> TypeVar
+replaceT orig spec t --replace t with spec iff t==orig, i.e. s/orig/spec; t is search term
+           | t==orig   = spec
+           | otherwise = case t of
+                           ListType t1 -> ListType $ replaceT orig spec t1
+                           t1 -> t1 --no replacement needed
+
+canSpecifyFTo :: Bool -> Bool -> FuncType -> FuncType -> Bool
+canSpecifyFTo useArgs requireSpecificity f1 f2 =
   isJust $ do
     guard $ (Map.size . argType $ f1) /= (Map.size . argType $ f2)
     let f' (t1,t2) = do
          temp <- getMoreSpecific t1 t2
-         guard $ temp == t1 --same or f1 is more specific. If it's f2, no good.
+         when requireSpecificity $ guard (temp==t1) --same or f1 is more specific. If it's f2, no good, but test only when requireSepcificity is true.
     f' (retType f1,retType f2)
     if useArgs then
-       mapM f' $ zip (Map.elems $ argType f1) (Map.elems $ argType f2)
+       mapM f' $ zip (Map.elems $ argType f1) (Map.elems $ argType f2) --mapM fails when any one is wrong
        else Just []
+
+compSameTListT :: TypeVar -> TypeVar -> DupsEqWhich
+compSameTListT (ListType t1) (ListType t2) = compSameTListT t1 t2
+compSameTListT (ListType t1) t2 | getListInnerType t1 == t2 = DupR
+                                | otherwise                 = DupNEQ
+compSameTListT t1 (ListType t2) | getListInnerType t2 == t1 = DupL
+                                | otherwise                 = DupNEQ
+--I don't know which, if any of the cases L or R is faster. I picked R, since it doesn't change the list
+compSameTListT t1 t2 | t1==t2    = DupR
+                     | otherwise = DupNEQ

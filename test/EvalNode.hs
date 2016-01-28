@@ -121,16 +121,25 @@ exprMapFunc = Node{rootLabel=Left Dfn, subForest=[
                 Node{rootLabel=Left Gt, subForest=[
                  Node{rootLabel=Right $ FuncArg 0, subForest=[]},
                  Node{rootLabel=Right $ DatI 10, subForest=[]}]},
-                Node{rootLabel=Right $ FuncArg 0, subForest=[]},
-                Node{rootLabel=Right $ DatI 0, subForest=[]}]}]}
+                Node{rootLabel=Left ToDouble, subForest=[
+                 Node{rootLabel=Right $ FuncArg 0, subForest=[]}]},
+                Node{rootLabel=Right $ DatD 0.0, subForest=[]}]}]}
 exprMap :: Expression
 exprMap = Node{rootLabel=Left Map, subForest=[
            Node{rootLabel=Right $ FuncId 0, subForest=[]},
-           Node{rootLabel=Right $ ListDat DatIVar [DatI 42, DatI 15, DatI 5, DatI 9], subForest=[]}]}
+           Node{rootLabel=Right $ ListDat DatDVar [DatI 42, DatI 15, DatI 5, DatI 9], subForest=[]}]}
 testMap =
   let (fTable,_) = execState (evalNode exprMapFunc) (StrMap.empty, StrMap.empty)
       res = evalState (evalNode exprMap) (fTable, StrMap.empty)
-  in "simple Map" ~: ListDat DatIVar [DatI 42, DatI 15, DatI 0, DatI 0] ~=? res
+  in "simple Map" ~: ListDat DatDVar [DatD 42.0, DatD 15.0, DatD 0.0, DatD 0.0] ~=? res
+exprEmptyMap :: Expression
+exprEmptyMap = Node{rootLabel=Left Map, subForest=[
+                Node{rootLabel=Right $ FuncId 0, subForest=[]},
+                Node{rootLabel=Right $ ListDat DatDVar [], subForest=[]}]}
+testEmptyMap =
+  let (fTable,_) = execState (evalNode exprMapFunc) (StrMap.empty, StrMap.empty)
+      res = evalState (evalNode exprEmptyMap) (fTable, StrMap.empty)
+  in "simple Map" ~: ListDat DatDVar [] ~=? res
 
 exprFoldFunc :: Expression
 exprFoldFunc = Node{rootLabel=Left Dfn, subForest=[
@@ -209,6 +218,7 @@ evalNodeTests = TestList [testAdd
                          ,testIf
                          ,testCall
                          ,testMap
+                         ,testEmptyMap 
                          ,testFold
                          ,testMkList
                          ,testConsList
